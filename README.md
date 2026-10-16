@@ -5,6 +5,8 @@ frontal del celular. Corre en el navegador, sin frameworks. Usa
 [MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker)
 (21 puntos por mano, hasta 2 manos).
 
+**👉 Pruébalo en el celular: https://santinooo33.github.io/Jueves-/** (en horizontal).
+
 > 🔒 **Privacidad:** el video se procesa solo en el dispositivo. Por red solo se descargan
 > la librería de MediaPipe y el modelo (una vez); ningún frame sale del navegador.
 
@@ -36,14 +38,12 @@ Al guardar un archivo, la página se recarga sola en el celular.
 
 ### Opción B: sin computador (GitHub Pages)
 
-El proyecto no necesita compilarse, así que GitHub Pages lo sirve tal cual, con HTTPS.
-En una cuenta gratuita, Pages solo funciona si el repositorio es **público**.
+Ya está publicado en **https://santinooo33.github.io/Jueves-/**. GitHub Pages sirve la rama
+`gh-pages` tal cual (no hace falta compilar), así que para actualizar la página:
 
-1. En GitHub: **Settings → Pages → Build and deployment → Source: Deploy from a branch**.
-2. Elige la rama `main` y la carpeta `/ (root)` → **Save**.
-3. En un minuto queda en `https://santinooo33.github.io/Jueves-/`.
-
-Cada push a `main` actualiza la página.
+```bash
+git push origin main:gh-pages
+```
 
 ### Opción C: túnel HTTPS (si la Wi-Fi bloquea conexiones entre dispositivos)
 
