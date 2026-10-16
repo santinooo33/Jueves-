@@ -19,7 +19,7 @@ function runFrames(engine, seconds, handFn, t0 = 0) {
 }
 
 test('clasifica las poses básicas', () => {
-  const expected = { palm: 'palma', fist: 'puno', thumbsUp: 'pulgar', L: 'L', point: 'senalar', pinch: 'pellizco' };
+  const expected = { palm: 'palma', fist: 'puno', thumbsUp: 'pulgar', L: 'L', point: 'senalar', pinch: 'pellizco', pinky: 'menique' };
   for (const [pose, label] of Object.entries(expected)) {
     const f = analyzeHand(makeHand(POSES[pose]), 4 / 3);
     assert.equal(f.pose, label, `${pose}: ${JSON.stringify(f.fingers)}`);
@@ -45,7 +45,7 @@ test('la forma no depende de la distancia a la cámara', () => {
   assert.ok(Math.abs(near.pinchRatio - far.pinchRatio) < 1e-9);
 });
 
-test('palma quieta 2 s activa, y no vuelve a alternar sin soltarla', () => {
+test('palma quieta 2 s activa; seguir con la palma no duerme; meñique arriba 1 s duerme', () => {
   const engine = new GestureEngine(CONFIG);
   const palm = () => [makeHand(POSES.palm)];
 
@@ -54,15 +54,23 @@ test('palma quieta 2 s activa, y no vuelve a alternar sin soltarla', () => {
   assert.equal(early.events.length, 0);
   assert.ok(early.states.at(-1).activation.progress > 0.8, 'muestra el progreso');
 
-  const rest = runFrames(engine, 4, palm, early.end);
+  // Con el sistema activo, la palma (aunque siga quieta) ya no lo duerme.
+  const rest = runFrames(engine, 5, palm, early.end);
   assert.deepEqual(rest.events.map((e) => e.type), ['activate']);
   assert.equal(engine.active, true);
 
-  // Cerrar la mano rearma el gesto; otra palma quieta 2 s desactiva.
-  const fist = runFrames(engine, 0.5, () => [makeHand(POSES.fist)], rest.end);
-  const again = runFrames(engine, 2.3, palm, fist.end);
-  assert.deepEqual(again.events.map((e) => e.type), ['deactivate']);
+  const pinky = runFrames(engine, 0.8, () => [makeHand(POSES.pinky)], rest.end);
+  assert.equal(engine.active, true, 'aún no pasa 1 s');
+  assert.equal(pinky.states.at(-1).activation.activating, false, 'el anillo es de dormir');
+  const more = runFrames(engine, 0.4, () => [makeHand(POSES.pinky)], pinky.end);
+  assert.deepEqual(more.events.map((e) => e.type), ['deactivate']);
   assert.equal(engine.active, false);
+
+  // Dormido, el meñique no hace nada; para activar de nuevo hace falta la palma.
+  const again = runFrames(engine, 2, () => [makeHand(POSES.pinky)], more.end);
+  assert.deepEqual(again.events, []);
+  const wake = runFrames(engine, 2.3, palm, again.end);
+  assert.deepEqual(wake.events.map((e) => e.type), ['activate']);
 });
 
 test('mover la palma reinicia la cuenta', () => {

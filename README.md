@@ -13,8 +13,8 @@ frontal del celular. Corre en el navegador, sin frameworks. Usa
 ## Estado: Fase 2
 
 - **Fase 1:** cámara de fondo en espejo, esqueleto de la mano, cursor suavizado (One Euro)
-  pegado a la punta del índice, activar/desactivar con **palma abierta y quieta 2 s**, indicador
-  de estado y modo debug.
+  pegado a la punta del índice, activar con **palma abierta y quieta 2 s**, dormir con el
+  **meñique arriba 1 s**, indicador de estado y modo debug.
 - **Fase 2:** un cursor por mano, pellizco con histéresis (clic y agarrar), ventana de prueba
   que se mueve, cambia de tamaño (L quieta o dos manos) y se cierra con el puño, y bordes que se
   iluminan al acercar el dedo.
@@ -73,8 +73,8 @@ Abre en el celular la URL `https://….trycloudflare.com` que imprime.
      o júntalas.
    - **Cerrar:** puño sobre la ventana (el borde se pone rojo y se cierra en 0,6 s).
    - **Nueva ventana:** pellizca **＋ Ventana de prueba** en la barra inferior.
-6. Otra vez **palma quieta 2 s** → **Dormido**. Para repetir el gesto hay que cerrar o bajar
-   la mano antes.
+6. Para dormir: **levanta el meñique** (los demás dedos doblados) y mantenlo quieto **1 s** →
+   **Dormido**. Con el sistema activo, la palma abierta ya no lo duerme.
 
 ### Modo debug
 

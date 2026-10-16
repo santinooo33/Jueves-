@@ -32,7 +32,7 @@ const STATUS = {
 const HINTS = {
   noHands: 'Muestra tu mano a la cámara',
   sleep: 'Palma abierta y quieta 2 s para activar',
-  active: 'Pellizca la barra para mover · L quieta para tamaño · puño para cerrar',
+  active: 'Pellizca la barra para mover · L quieta: tamaño · puño: cerrar · meñique arriba: dormir',
   resize: 'Abre o junta pulgar e índice · baja la mano o cierra el puño para salir',
 };
 

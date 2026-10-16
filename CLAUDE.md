@@ -30,3 +30,7 @@ Por fases; al final de cada una, parar y esperar las pruebas y el feedback del u
 5. Pulido visual, sonidos y rendimiento.
 
 Los umbrales de gestos viven en `CONFIG`, al inicio de `js/gestures.js`.
+
+Cambios de gestos pedidos por el usuario (respetarlos en las fases siguientes):
+- Activar: palma abierta y quieta 2 s. **Dormir: meñique levantado 1 s** (no la palma).
+- El cursor va exactamente sobre la punta del índice (sin zona amplificada).

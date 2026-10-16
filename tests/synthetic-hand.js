@@ -72,6 +72,7 @@ export const POSES = {
   L: { curl: { middle: 1, ring: 1, pinky: 1 }, thumb: 'side' },
   point: { curl: { middle: 1, ring: 1, pinky: 1 }, thumb: 'folded' },
   pinch: { curl: { index: 0.35, middle: 0.2, ring: 0.2, pinky: 0.2 }, thumb: 'open', pinch: true },
+  pinky: { curl: { index: 1, middle: 1, ring: 0.9 }, thumb: 'folded' },
 };
 
 /** Frame como el de hand-tracking.js, con los puntos ya proyectados a la pantalla. */

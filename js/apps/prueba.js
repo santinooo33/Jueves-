@@ -17,6 +17,7 @@ export function createTestApp() {
       <li><b>L quieta ½ s</b>: modo tamaño (abre o junta los dedos)</li>
       <li><b>Dos manos</b> pellizcando: separa para hacer zoom</li>
       <li><b>Puño</b> sobre la ventana: cerrar</li>
+      <li><b>Meñique arriba 1 s</b>: dormir</li>
     </ul>`;
   const out = el.querySelector('output');
   let count = 0;

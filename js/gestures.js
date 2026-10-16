@@ -12,8 +12,9 @@ import { OneEuroFilter } from './one-euro-filter.js';
 // Las razones son adimensionales: no dependen de lo lejos que esté la mano.
 // ─────────────────────────────────────────────────────────────────────────────
 export const CONFIG = {
-  // Activación / desactivación: palma abierta y quieta.
-  ACTIVATION_HOLD_MS: 2000, // tiempo que hay que sostener la palma
+  // Activar: palma abierta y quieta. Dormir: meñique levantado (los demás dedos doblados) y quieto.
+  ACTIVATION_HOLD_MS: 2000, // tiempo que hay que sostener la palma para activar
+  SLEEP_HOLD_MS: 1000, // tiempo que hay que sostener el meñique arriba para dormir
   ACTIVATION_RING_DELAY_MS: 300, // el anillo de progreso aparece tras este tiempo (evita parpadeos)
   ACTIVATION_COOLDOWN_MS: 1000, // pausa mínima entre dos cambios de estado
   STILL_TOLERANCE: 0.3, // desplazamiento máx. de la palma (× tamaño de la palma) para contar como "quieta"
@@ -90,6 +91,7 @@ export const POSE_LABELS = {
   L: 'Forma de L',
   senalar: 'Señalar',
   pellizco: 'Pellizco',
+  menique: 'Meñique arriba',
   otro: '—',
 };
 
@@ -191,6 +193,8 @@ function classifyPose(f, cfg) {
   f.fistLike = four.every(cur);
 
   if (four.every(cur)) return f.thumbExtended ? 'pulgar' : 'puno';
+  // El anular suele acompañar un poco al meñique: basta con que no esté extendido.
+  if (ext(pinky) && ![index, middle, ring].some(ext)) return 'menique';
   if (f.pinchRatio < cfg.PINCH_GRAB_RATIO) return 'pellizco';
   if (four.every(ext) && (f.thumbExtended || !cfg.PALM_REQUIRES_THUMB)) return 'palma';
   if (ext(index) && !rest.some(ext)) return f.thumbExtended ? 'L' : 'senalar';
@@ -237,9 +241,12 @@ export class GestureEngine {
     return { mode: this.mode, active: this.active, hands: frame.hands, pointers, activation, events, gesture };
   }
 
-  // Palma abierta + quieta durante ACTIVATION_HOLD_MS alterna Dormido <-> Activo.
+  // Dormido: palma abierta y quieta ACTIVATION_HOLD_MS → Activo.
+  // Activo: meñique arriba y quieto SLEEP_HOLD_MS → Dormido.
   #updateActivation(hands, now, events) {
     const cfg = this.cfg;
+    const pose = this.active ? 'menique' : 'palma';
+    const holdMs = this.active ? cfg.SLEEP_HOLD_MS : cfg.ACTIVATION_HOLD_MS;
     let best = null;
     let toggled = false;
 
@@ -251,11 +258,11 @@ export class GestureEngine {
         this.holds.set(hand.id, hold);
       }
       hold.seen = now;
-      if (f.pose === 'palma') hold.lastOpen = now;
+      if (f.pose === pose) hold.lastOpen = now;
 
       const open = now - hold.lastOpen <= cfg.POSE_GRACE_MS;
       if (!open) {
-        // Al dejar de mostrar la palma se puede volver a usar el gesto.
+        // Al deshacer la pose se puede volver a usar el gesto.
         hold.start = null;
         hold.locked = false;
       }
@@ -267,7 +274,7 @@ export class GestureEngine {
       const elapsed = hold.start === null || hold.locked ? 0 : now - hold.start;
       hand.activation = { drift: hold.start === null ? 0 : drift, elapsed, locked: hold.locked };
 
-      if (!toggled && elapsed >= cfg.ACTIVATION_HOLD_MS && now - this.lastToggle >= cfg.ACTIVATION_COOLDOWN_MS) {
+      if (!toggled && elapsed >= holdMs && now - this.lastToggle >= cfg.ACTIVATION_COOLDOWN_MS) {
         toggled = true;
         this.active = !this.active;
         this.lastToggle = now;
@@ -275,12 +282,12 @@ export class GestureEngine {
         continue;
       }
       if (elapsed >= cfg.ACTIVATION_RING_DELAY_MS && (!best || elapsed > best.elapsed)) {
-        best = { handId: hand.id, elapsed, progress: Math.min(elapsed / cfg.ACTIVATION_HOLD_MS, 1), activating: !this.active };
+        best = { handId: hand.id, elapsed, progress: Math.min(elapsed / holdMs, 1), activating: !this.active };
       }
     }
 
     if (toggled) {
-      // Ninguna mano vuelve a cambiar el estado hasta cerrar o bajar la palma.
+      // Ninguna mano vuelve a cambiar el estado hasta deshacer la pose.
       for (const hold of this.holds.values()) {
         if (hold.start !== null) {
           hold.locked = true;
