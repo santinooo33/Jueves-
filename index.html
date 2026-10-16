@@ -26,12 +26,15 @@
     <div class="holo-tint"></div>
     <div class="holo-grid"></div>
 
-    <!-- Capa 2: esqueleto de la mano y anillos (canvas) -->
+    <!-- Capa 2: escritorio con sus ventanas -->
+    <main id="desktop"></main>
+
+    <!-- Capa 3: esqueleto de la mano, anillos y guías (canvas, por encima de las ventanas) -->
     <canvas id="hud"></canvas>
     <div class="hud-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <div id="fx" aria-hidden="true"></div>
 
-    <!-- Capa 3: interfaz -->
+    <!-- Capa 4: interfaz -->
     <header class="topbar">
       <div class="brand">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
@@ -43,7 +46,7 @@
       </div>
       <div id="status" data-mode="sleep" role="status"><span class="dot"></span><span class="label">Dormido</span></div>
       <div class="actions">
-        <button id="debug-btn" class="chip" type="button" title="Modo debug (tecla D)">DEBUG</button>
+        <button id="debug-btn" class="chip" type="button" data-pinch title="Modo debug (tecla D)">DEBUG</button>
         <button id="fullscreen-btn" class="chip icon" type="button" title="Pantalla completa" aria-label="Pantalla completa">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
@@ -53,8 +56,11 @@
     </header>
 
     <div id="hint" class="hint"></div>
+    <nav class="dock">
+      <button id="new-window" class="dock-btn" type="button" data-pinch><span aria-hidden="true">＋</span> Ventana de prueba</button>
+    </nav>
     <aside id="debug" class="debug-panel"></aside>
-    <div id="cursor" aria-hidden="true"><div class="ring"></div><div class="dot"></div></div>
+    <div id="cursors" aria-hidden="true"></div>
 
     <!-- Pantalla de inicio -->
     <section id="start" class="start">

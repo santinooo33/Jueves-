@@ -32,7 +32,19 @@ const STATUS = {
 const HINTS = {
   noHands: 'Muestra tu mano a la cámara',
   sleep: 'Palma abierta y quieta 2 s para activar',
-  active: 'Mueve el índice para mover el cursor · palma quieta 2 s para dormir',
+  active: 'Pellizca la barra para mover · L quieta para tamaño · puño para cerrar',
+  resize: 'Abre o junta pulgar e índice · baja la mano o cierra el puño para salir',
+};
+
+// Qué está haciendo cada cursor, para el panel debug.
+const HOVER_LABELS = {
+  drag: 'moviendo',
+  press: 'pulsando',
+  zoom: 'zoom',
+  resize: 'tamaño',
+  grab: 'sobre borde',
+  button: 'sobre botón',
+  content: 'sobre ventana',
 };
 
 const FINGER_NAMES = { thumb: 'Pulgar', index: 'Índice', middle: 'Medio', ring: 'Anular', pinky: 'Meñique' };
@@ -42,7 +54,8 @@ export class UIFeedback {
   constructor(doc = document) {
     this.canvas = doc.getElementById('hud');
     this.ctx = this.canvas.getContext('2d');
-    this.cursorEl = doc.getElementById('cursor');
+    this.cursorsEl = doc.getElementById('cursors');
+    this.cursors = []; // un elemento por mano, se crean según hagan falta
     this.statusEl = doc.getElementById('status');
     this.hintEl = doc.getElementById('hint');
     this.debugEl = doc.getElementById('debug');
@@ -54,7 +67,6 @@ export class UIFeedback {
     this.dpr = 1;
     this.mode = null;
     this.hint = null;
-    this.cursorVisible = false;
     this.debug = false;
     this.lastDebugUpdate = 0;
     this.stats = { camFps: 0, renderFps: 0, inferenceMs: 0, camFrames: 0, renderFrames: 0, since: performance.now() };
@@ -104,32 +116,34 @@ export class UIFeedback {
   }
 
   // ── Dibujo de cada frame de la cámara ──
-  render(frame, state, project, tracker) {
+  render(frame, state, ix, tracker, project) {
     const ctx = this.ctx;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.width, this.height);
 
-    if (this.debug) this.#drawCursorBox(project);
     for (const hand of state.hands) {
-      this.#drawHand(hand, state.active, hand.id === state.cursor.handId);
+      this.#drawHand(hand, state.active);
       if (this.debug) this.#drawFingerLabels(hand);
     }
     const ringHand = state.activation && state.hands.find((h) => h.id === state.activation.handId);
     if (ringHand) this.#drawActivationRing(ringHand, state.activation);
-    this.body.classList.toggle('has-ring', Boolean(ringHand));
+    for (const line of ix.lines) this.#drawLine(line);
+    for (const ind of ix.indicators) this.#drawRing(ind.x, ind.y, 30, ind.progress, RGB[ind.rgb], ind.label);
+    this.body.classList.toggle('has-ring', Boolean(ringHand) || ix.indicators.length > 0);
 
-    this.#updateCursor(state.cursor);
-    this.#updateStatus(state.mode);
-    this.#updateHint(state.hands.length === 0 ? 'noHands' : state.mode === 'sleep' ? 'sleep' : 'active');
+    this.#updateCursors(state.pointers);
+    const mode = state.active ? ix.mode : 'sleep';
+    this.#updateStatus(mode);
+    this.#updateHint(state.hands.length === 0 ? 'noHands' : mode);
     for (const e of state.events) this.#playEvent(e, project);
 
     if (this.debug && frame.timestamp - this.lastDebugUpdate > 100) {
       this.lastDebugUpdate = frame.timestamp;
-      this.#updateDebugPanel(state, tracker);
+      this.#updateDebugPanel(state, mode, tracker);
     }
   }
 
-  #drawHand(hand, active, primary) {
+  #drawHand(hand, active) {
     const ctx = this.ctx;
     const pts = hand.screen;
     const rgb = active ? RGB.cyan : RGB.sleep;
@@ -158,20 +172,9 @@ export class UIFeedback {
       ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
     }
     ctx.fill();
-
-    // Marca la punta del índice de la mano que controla el cursor.
-    if (active && primary) {
-      const tip = pts[LM.INDEX_TIP];
-      ctx.strokeStyle = `rgba(${RGB.cyan}, 0.9)`;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(tip.x, tip.y, 10, 0, Math.PI * 2);
-      ctx.stroke();
-    }
   }
 
   #drawActivationRing(hand, activation) {
-    const ctx = this.ctx;
     const pts = hand.screen;
     let cx = 0;
     let cy = 0;
@@ -180,11 +183,14 @@ export class UIFeedback {
       cy += pts[i].y / PALM_POINTS.length;
     }
     const size = Math.hypot(pts[LM.WRIST].x - pts[LM.MIDDLE_MCP].x, pts[LM.WRIST].y - pts[LM.MIDDLE_MCP].y);
-    const r = Math.max(36, size * 0.75);
     const rgb = activation.activating ? RGB.cyan : RGB.amber;
-    const start = -Math.PI / 2;
-    const end = start + Math.PI * 2 * activation.progress;
+    this.#drawRing(cx, cy, Math.max(36, size * 0.75), activation.progress, rgb, activation.activating ? 'ACTIVAR' : 'DORMIR');
+  }
 
+  // Anillo de progreso con etiqueta (activar, modo tamaño, cerrar…).
+  #drawRing(cx, cy, r, progress, rgb, label) {
+    const ctx = this.ctx;
+    const start = -Math.PI / 2;
     ctx.lineCap = 'round';
     ctx.strokeStyle = `rgba(${rgb}, 0.18)`;
     ctx.lineWidth = 5;
@@ -193,7 +199,7 @@ export class UIFeedback {
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(cx, cy, r, start, end);
+    ctx.arc(cx, cy, r, start, start + Math.PI * 2 * Math.min(progress, 1));
     ctx.strokeStyle = `rgba(${rgb}, 0.25)`;
     ctx.lineWidth = 14;
     ctx.stroke();
@@ -205,24 +211,31 @@ export class UIFeedback {
     ctx.font = '600 13px Rajdhani, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(activation.activating ? 'ACTIVAR' : 'DORMIR', cx, cy - r - 14);
+    ctx.fillText(label, cx, cy - r - 14);
   }
 
-  #drawCursorBox(project) {
-    const { left, right, top, bottom } = CONFIG.CURSOR_BOX;
-    const a = project(left, top);
-    const b = project(right, bottom);
+  // Línea guía: pulgar-índice en modo tamaño, o entre las dos manos en el zoom.
+  #drawLine({ a, b, rgb }) {
     const ctx = this.ctx;
-    ctx.setLineDash([6, 6]);
-    ctx.strokeStyle = `rgba(${RGB.amber}, 0.6)`;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    const color = RGB[rgb];
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = `rgba(${color}, 0.22)`;
+    ctx.lineWidth = 10;
+    ctx.stroke();
+    ctx.setLineDash([8, 7]);
+    ctx.strokeStyle = `rgba(${color}, 0.95)`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = `rgba(${RGB.amber}, 0.8)`;
-    ctx.font = '500 11px ui-monospace, Menlo, monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('zona del cursor', a.x + 4, a.y - 3);
+    ctx.fillStyle = `rgba(${color}, 1)`;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 5, 0, Math.PI * 2);
+    ctx.moveTo(b.x + 5, b.y);
+    ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   #drawFingerLabels(hand) {
@@ -240,14 +253,24 @@ export class UIFeedback {
     }
   }
 
-  #updateCursor(cursor) {
-    if (cursor.visible) {
-      this.cursorEl.style.transform = `translate3d(${cursor.x}px, ${cursor.y}px, 0)`;
+  // Un cursor por mano. Cambia de aspecto al pellizcar o al pasar sobre algo agarrable.
+  #updateCursors(pointers) {
+    while (this.cursors.length < pointers.length) {
+      const el = document.createElement('div');
+      el.className = 'cursor';
+      el.innerHTML = '<div class="ring"></div><div class="dot"></div>';
+      this.cursorsEl.appendChild(el);
+      this.cursors.push({ el, cls: '' });
     }
-    if (cursor.visible !== this.cursorVisible) {
-      this.cursorVisible = cursor.visible;
-      this.cursorEl.classList.toggle('visible', cursor.visible);
-    }
+    this.cursors.forEach((c, i) => {
+      const p = pointers[i];
+      const cls = p ? ['cursor', 'visible', p.pinching && 'pinching', p.hover && `on-${p.hover}`].filter(Boolean).join(' ') : 'cursor';
+      if (cls !== c.cls) {
+        c.el.className = cls;
+        c.cls = cls;
+      }
+      if (p) c.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+    });
   }
 
   #updateStatus(mode) {
@@ -262,31 +285,43 @@ export class UIFeedback {
     if (key === this.hint) return;
     this.hint = key;
     this.hintEl.textContent = HINTS[key];
+    this.hintEl.classList.remove('faded');
+    clearTimeout(this.hintTimer);
+    // Con el sistema activo la pista se retira sola para no tapar las ventanas.
+    if (key === 'active' || key === 'resize') this.hintTimer = setTimeout(() => this.hintEl.classList.add('faded'), 6000);
   }
 
   #playEvent(event, project) {
+    if (event.type === 'pinchstart') {
+      this.#spawnFx('ripple', event.x, event.y);
+      return;
+    }
     if (event.type !== 'activate' && event.type !== 'deactivate') return;
     const p = project(event.at.x, event.at.y);
-    const el = document.createElement('div');
-    el.className = `pulse ${event.type}`;
-    el.style.left = `${p.x}px`;
-    el.style.top = `${p.y}px`;
-    el.addEventListener('animationend', () => el.remove());
-    this.fxEl.appendChild(el);
+    this.#spawnFx(`pulse ${event.type}`, p.x, p.y);
 
     this.statusEl.classList.remove('bump');
     void this.statusEl.offsetWidth; // reinicia la animación
     this.statusEl.classList.add('bump');
   }
 
-  #updateDebugPanel(state, tracker) {
+  #spawnFx(className, x, y) {
+    const el = document.createElement('div');
+    el.className = className;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.addEventListener('animationend', () => el.remove());
+    this.fxEl.appendChild(el);
+  }
+
+  #updateDebugPanel(state, mode, tracker) {
     const s = this.stats;
     const cfg = CONFIG;
     const cell = (finger, text) => `<td style="color:rgb(${STATE_RGB[finger.state]})">${text}</td>`;
     const rows = [
       `<div class="dbg-title">DEBUG <span>tecla D · ${tracker.delegate ?? '—'} · ${tracker.resolution}</span></div>`,
       `<div>Cámara <b>${s.camFps.toFixed(1)} fps</b> · inferencia <b>${s.inferenceMs.toFixed(1)} ms</b> · pantalla ${s.renderFps.toFixed(0)} fps</div>`,
-      `<div>${STATUS[state.mode]} · gesto <b>${state.gesture}</b></div>`,
+      `<div>${STATUS[mode]} · gesto <b>${state.gesture}</b></div>`,
     ];
     if (state.hands.length) {
       const head = Object.values(FINGER_NAMES).map((n) => `<th>${n.slice(0, 3)}</th>`).join('');
@@ -294,6 +329,8 @@ export class UIFeedback {
         .map((hand) => {
           const f = hand.features;
           const act = hand.activation ?? { drift: 0, elapsed: 0 };
+          const p = state.pointers.find((q) => q.handId === hand.id);
+          const doing = p ? ` · ${p.pinching ? '<b>pinza</b> ' : ''}${HOVER_LABELS[p.hover] ?? ''}` : '';
           const fingers = Object.keys(FINGER_NAMES)
             .map((key) => {
               const finger = f.fingers[key];
@@ -303,9 +340,9 @@ export class UIFeedback {
             .join('');
           const side = (HAND_NAMES[hand.handedness] ?? hand.handedness).slice(0, 3);
           return (
-            `<tr><th>#${hand.id} ${side}${hand.id === state.cursor.handId ? '◉' : ''}</th>${fingers}</tr>` +
-            `<tr class="sub"><td colspan="6"><b>${POSE_LABELS[f.pose]}</b> · pellizco ${f.pinchRatio.toFixed(2)} · ${f.pinchCm.toFixed(1)}cm` +
-            ` · mov ${act.drift.toFixed(2)} · ${(act.elapsed / 1000).toFixed(1)}s${act.locked ? ' · suelta' : ''}</td></tr>`
+            `<tr><th>#${hand.id} ${side}</th>${fingers}</tr>` +
+            `<tr class="sub"><td colspan="6"><b>${POSE_LABELS[hand.track?.pose ?? f.pose]}</b> · pellizco ${f.pinchRatio.toFixed(2)} · ${f.pinchCm.toFixed(1)}cm` +
+            ` · mov ${act.drift.toFixed(2)} · ${(act.elapsed / 1000).toFixed(1)}s${act.locked ? ' · suelta' : ''}${doing}</td></tr>`
           );
         })
         .join('');
@@ -313,7 +350,7 @@ export class UIFeedback {
     }
     rows.push(
       `<div class="dbg-cfg">dedo ext ≤${cfg.FINGER_EXTENDED_MAX_BEND}° dob ≥${cfg.FINGER_CURLED_MIN_BEND}° · pulgar ≤${cfg.THUMB_MAX_BEND}°/sep ≥${cfg.THUMB_EXTENDED_RATIO}` +
-        ` · pellizco &lt;${cfg.PINCH_GRAB_RATIO}/&gt;${cfg.PINCH_RELEASE_RATIO} · quietud ≤${cfg.ACTIVATION_STILL_TOLERANCE}</div>`,
+        ` · pellizco &lt;${cfg.PINCH_GRAB_RATIO}/&gt;${cfg.PINCH_RELEASE_RATIO} · quietud ≤${cfg.STILL_TOLERANCE}</div>`,
     );
     this.debugEl.innerHTML = rows.join('');
   }

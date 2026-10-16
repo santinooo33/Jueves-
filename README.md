@@ -10,13 +10,14 @@ frontal del celular. Corre en el navegador, sin frameworks. Usa
 > 🔒 **Privacidad:** el video se procesa solo en el dispositivo. Por red solo se descargan
 > la librería de MediaPipe y el modelo (una vez); ningún frame sale del navegador.
 
-## Estado: Fase 1
+## Estado: Fase 2
 
-- Cámara frontal de fondo, en espejo, con tinte holográfico.
-- Detección de manos y esqueleto (puntos y líneas).
-- Cursor con la punta del índice, suavizado con filtro One Euro.
-- Activar/desactivar: **palma abierta y quieta 2 s** (anillo de progreso alrededor de la palma).
-- Indicador de estado (Dormido / Activo) y modo debug.
+- **Fase 1:** cámara de fondo en espejo, esqueleto de la mano, cursor suavizado (One Euro)
+  pegado a la punta del índice, activar/desactivar con **palma abierta y quieta 2 s**, indicador
+  de estado y modo debug.
+- **Fase 2:** un cursor por mano, pellizco con histéresis (clic y agarrar), ventana de prueba
+  que se mueve, cambia de tamaño (L quieta o dos manos) y se cierra con el puño, y bordes que se
+  iluminan al acercar el dedo.
 
 ## Probarlo
 
@@ -55,14 +56,24 @@ cloudflared tunnel --url https://localhost:5173 --no-tls-verify
 
 Abre en el celular la URL `https://….trycloudflare.com` que imprime.
 
-## Cómo usar la Fase 1
+## Cómo usarlo
 
 1. Pon el celular **en horizontal**, apoyado, a 40–60 cm, con buena luz.
 2. Toca **Iniciar** y acepta el permiso de cámara.
 3. Muestra la **palma abierta y quieta**: aparece un anillo que se llena en 2 s → **Activo**.
-4. Mueve el **índice**: el cursor lo sigue. No hace falta mover todo el brazo, porque una zona
-   central de la cámara se estira a toda la pantalla.
-5. Otra vez **palma quieta 2 s** → **Dormido**. Para repetir el gesto hay que cerrar o bajar
+4. Mueve el **índice**: el cursor está sobre la punta del dedo.
+5. Gestos sobre las ventanas:
+   - **Mover:** pellizca (pulgar + índice) la barra de título o el borde y arrastra. El borde
+     se ilumina al acercar el dedo y la ventana sigue el punto medio entre pulgar e índice.
+   - **Pulsar un botón:** pellizca encima y suelta (el clic ocurre al soltar).
+   - **Cambiar tamaño:** forma una **L** (pulgar e índice abiertos) sobre la ventana y déjala
+     quieta ½ s. La ventana brilla en ámbar: abre los dedos para agrandar, júntalos para achicar.
+     Sales bajando la mano o cerrando el puño.
+   - **Zoom con dos manos:** pellizca la ventana con una mano y luego con la otra; sepáralas
+     o júntalas.
+   - **Cerrar:** puño sobre la ventana (el borde se pone rojo y se cierra en 0,6 s).
+   - **Nueva ventana:** pellizca **＋ Ventana de prueba** en la barra inferior.
+6. Otra vez **palma quieta 2 s** → **Dormido**. Para repetir el gesto hay que cerrar o bajar
    la mano antes.
 
 ### Modo debug
@@ -71,7 +82,7 @@ Botón **DEBUG** (o tecla **D**, o abrir con `?debug` en la URL). Muestra:
 - FPS de la cámara, tiempo de inferencia, GPU/CPU y resolución.
 - Por mano: flexión de cada dedo en grados (verde = extendido, ámbar = intermedio, rojo =
   doblado), separación del pulgar, pellizco (razón y cm), movimiento y tiempo sostenido.
-- La pose detectada y la **zona del cursor** (rectángulo punteado).
+- La pose detectada y qué hace cada cursor (pinza, moviendo, tamaño, zoom…).
 
 Si la GPU da problemas, `?cpu` fuerza el modo CPU.
 
@@ -91,14 +102,17 @@ index.html             página y capas (cámara, HUD, interfaz)
 css/jueves.css         estética holográfica
 js/main.js             arranque y bucle principal
 js/hand-tracking.js    cámara + MediaPipe → landmarks por frame (en espejo, con id estable por mano)
-js/gestures.js         umbrales (CONFIG), forma de la mano, activación y cursor
+js/gestures.js         umbrales (CONFIG), forma de la mano, activación, cursores y pellizco
+js/interaction.js      gestos → acciones: mover, pulsar, modo tamaño, zoom, cerrar
+js/desktop.js          ventanas: crear, enfocar, mover, redimensionar, cerrar y brillo del borde
+js/apps/prueba.js      ventana de prueba (contador)
 js/one-euro-filter.js  suavizado del cursor
-js/ui-feedback.js      esqueleto, cursor, anillo, efectos, estado y panel debug
+js/ui-feedback.js      esqueleto, cursores, anillos, guías, efectos, estado y panel debug
 tests/                 pruebas con manos sintéticas (npm test)
 ```
 
-Próximas fases: `desktop.js` (ventanas, barra de apps, recientes) y `apps/` (reloj, notas,
-calculadora).
+Próximas fases: barra de apps y las mini-apps de `apps/` (reloj, notas, calculadora); luego
+retroceder, inicio y apps recientes.
 
 ## Pruebas
 

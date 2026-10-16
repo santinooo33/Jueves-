@@ -3,6 +3,9 @@
 import { HandTracker, createProjector } from './hand-tracking.js';
 import { GestureEngine, CONFIG } from './gestures.js';
 import { UIFeedback } from './ui-feedback.js';
+import { Desktop } from './desktop.js';
+import { Interaction } from './interaction.js';
+import { createTestApp } from './apps/prueba.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,18 +19,21 @@ const ui = new UIFeedback();
 // ?cpu fuerza el modo CPU por si la GPU del teléfono da problemas.
 const tracker = new HandTracker(video, { forceCpu: params.has('cpu') });
 const engine = new GestureEngine(CONFIG);
+const desktop = new Desktop($('desktop'));
+const interaction = new Interaction(desktop, CONFIG);
 
 let running = false;
 let wakeLock = null;
 
 // Acceso desde la consola para ajustar umbrales en vivo, p. ej. jueves.CONFIG.PINCH_GRAB_RATIO = 0.25
-window.jueves = { CONFIG, engine, tracker, ui };
+window.jueves = { CONFIG, engine, tracker, ui, desktop, interaction };
 
 ui.setDebug(params.has('debug'));
 // iPhone no tiene API de pantalla completa: ahí se usa "Agregar a inicio".
 $('fullscreen-btn').hidden = !document.documentElement.requestFullscreen;
 
 startBtn.addEventListener('click', start);
+$('new-window').addEventListener('click', openTestWindow);
 $('debug-btn').addEventListener('click', () => ui.toggleDebug());
 $('fullscreen-btn').addEventListener('click', toggleFullscreen);
 window.addEventListener('keydown', (e) => {
@@ -53,6 +59,7 @@ async function start() {
   requestWakeLock();
   startScreen.classList.add('hidden');
   document.body.classList.add('is-running');
+  if (!desktop.windows.length) openTestWindow();
   startBtn.disabled = false;
   if (!running) requestAnimationFrame(loop);
   running = true;
@@ -79,7 +86,12 @@ function loop(now) {
   for (const hand of frame.hands) hand.screen = hand.landmarks.map((p) => project(p.x, p.y));
 
   const state = engine.update(frame, view);
-  ui.render(frame, state, project, tracker);
+  const ix = interaction.update(state, frame.timestamp);
+  ui.render(frame, state, ix, tracker, project);
+}
+
+function openTestWindow() {
+  desktop.createWindow({ title: 'Ventana de prueba', icon: '◈', content: createTestApp() });
 }
 
 function setStartMessage(text, isError = false) {

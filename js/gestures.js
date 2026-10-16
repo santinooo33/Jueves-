@@ -1,7 +1,9 @@
 // gestures.js — Detecta gestos a partir de los landmarks de hand-tracking.js.
 //
-// Fase 1: forma de la mano (dedos extendidos/doblados, pulgar, pellizco), activación
-// con palma abierta quieta y cursor suavizado con la punta del índice.
+// Forma de la mano (dedos extendidos/doblados, pulgar, pellizco), activación con palma
+// abierta quieta, un cursor por mano pegado a la punta del índice, pellizco con histéresis
+// y poses sostenidas (L, puño). Qué hacen esos gestos sobre las ventanas lo decide
+// interaction.js.
 
 import { OneEuroFilter } from './one-euro-filter.js';
 
@@ -13,9 +15,10 @@ export const CONFIG = {
   // Activación / desactivación: palma abierta y quieta.
   ACTIVATION_HOLD_MS: 2000, // tiempo que hay que sostener la palma
   ACTIVATION_RING_DELAY_MS: 300, // el anillo de progreso aparece tras este tiempo (evita parpadeos)
-  ACTIVATION_STILL_TOLERANCE: 0.3, // desplazamiento máx. de la palma (× tamaño de la palma) para contar como "quieta"
   ACTIVATION_COOLDOWN_MS: 1000, // pausa mínima entre dos cambios de estado
+  STILL_TOLERANCE: 0.3, // desplazamiento máx. de la palma (× tamaño de la palma) para contar como "quieta"
   POSE_GRACE_MS: 180, // tolerancia a fallos breves del detector antes de cancelar un gesto
+  POSE_CONFIRM_MS: 90, // una pose nueva cuenta cuando se mantiene este tiempo (filtra parpadeos)
 
   // Forma de los dedos: "flexión" = suma de los ángulos de sus 3 articulaciones (en grados).
   // Recto ≈ 0–60°, relajado ≈ 60–100°, doblado del todo ≈ 150–240°.
@@ -30,17 +33,29 @@ export const CONFIG = {
   PALM_REQUIRES_THUMB: false, // ¿la "palma abierta" exige además el pulgar abierto?
 
   // Pellizco. razón = dist(punta del pulgar, punta del índice) / largo de la palma
-  // (se usa desde la fase 2; ya se muestra en debug para ir calibrando)
   PINCH_GRAB_RATIO: 0.22, // < esto: agarra
-  PINCH_RELEASE_RATIO: 0.38, // > esto: suelta (histéresis)
+  PINCH_RELEASE_RATIO: 0.38, // > esto: suelta (histéresis: hay que abrir claramente más)
+  PINCH_CONFIRM_FRAMES: 2, // frames seguidos por debajo/encima del umbral para agarrar/soltar
+  // Al juntar los dedos la punta del índice baja hacia el pulgar: el punto de agarre es donde
+  // estaba el cursor este tiempo antes, así el clic cae donde apuntabas.
+  PINCH_LOOKBACK_MS: 120,
 
-  // Cursor. Zona del encuadre de la cámara (0..1, en espejo) que se estira a toda la
-  // pantalla: más pequeña = menos movimiento de brazo, pero menos precisión.
-  CURSOR_BOX: { left: 0.25, right: 0.75, top: 0.18, bottom: 0.58 },
-  // Suavizado One Euro (en píxeles). minCutoff menor = menos temblor; beta mayor = menos retraso.
+  // Cursor (uno por mano), en la punta del índice. Suavizado One Euro en píxeles:
+  // minCutoff menor = menos temblor; beta mayor = menos retraso al moverse rápido.
   CURSOR_MIN_CUTOFF: 1.0,
   CURSOR_BETA: 0.015,
   CURSOR_D_CUTOFF: 1.0,
+
+  // Ventanas
+  EDGE_GRAB_INSIDE_PX: 16, // ancho del borde agarrable hacia dentro de la ventana
+  EDGE_GRAB_OUTSIDE_PX: 22, // y hacia fuera (el dedo no tiene que caer justo en la línea)
+  EDGE_GLOW_PX: 70, // a esta distancia del borde empieza a iluminarse
+  CLICK_MAX_MOVE_PX: 30, // si el pellizco se mueve más que esto, ya no cuenta como clic
+  RESIZE_HOLD_MS: 500, // "L" quieta sobre una ventana durante este tiempo → modo tamaño
+  RESIZE_SENSITIVITY: 1.5, // tamaño = tamaño inicial × (apertura / apertura inicial) ^ esto
+  RESIZE_EXIT_DROP: 1.2, // bajar la palma esto (× tamaño de la palma) sale del modo tamaño
+  HAND_LOST_MS: 300, // sin ver la mano este tiempo se cancela lo que estaba haciendo
+  FIST_CLOSE_HOLD_MS: 600, // puño sostenido sobre una ventana durante este tiempo → la cierra
 };
 
 // Índices de los 21 landmarks de MediaPipe.
@@ -81,7 +96,7 @@ export const POSE_LABELS = {
 const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // Ángulo (°) entre dos vectores 3D.
 function angle(u, v) {
@@ -173,30 +188,28 @@ function classifyPose(f, cfg) {
   const cur = (finger) => finger.state === 'curled';
   const four = [index, middle, ring, pinky];
   const rest = [middle, ring, pinky];
+  f.fistLike = four.every(cur);
 
   if (four.every(cur)) return f.thumbExtended ? 'pulgar' : 'puno';
   if (f.pinchRatio < cfg.PINCH_GRAB_RATIO) return 'pellizco';
   if (four.every(ext) && (f.thumbExtended || !cfg.PALM_REQUIRES_THUMB)) return 'palma';
-  if (ext(index) && rest.every(cur)) return f.thumbExtended ? 'L' : 'senalar';
+  if (ext(index) && !rest.some(ext)) return f.thumbExtended ? 'L' : 'senalar';
   return 'otro';
 }
 
 /**
- * Motor de gestos. Se llama una vez por cada frame nuevo de la cámara.
- * Devuelve el estado para la interfaz y una lista de eventos ("activate", "deactivate").
+ * Motor de gestos. Se llama una vez por cada frame nuevo de la cámara, con `hand.screen`
+ * (los 21 puntos ya proyectados a píxeles de la pantalla).
+ * Devuelve el estado para la interfaz y una lista de eventos:
+ * "activate", "deactivate", "pinchstart", "pinchend".
  */
 export class GestureEngine {
   constructor(cfg = CONFIG) {
     this.cfg = cfg;
     this.active = false;
-    this.holds = new Map(); // id de mano -> progreso de "palma quieta"
+    this.holds = new Map(); // id de mano -> progreso de "palma quieta" (activación)
+    this.tracks = new Map(); // id de mano -> pose estable, quietud, cursor y pellizco
     this.lastToggle = -Infinity;
-    this.cursor = { x: 0, y: 0, visible: false, handId: null };
-    this.cursorFilter = new OneEuroFilter({
-      minCutoff: cfg.CURSOR_MIN_CUTOFF,
-      beta: cfg.CURSOR_BETA,
-      dCutoff: cfg.CURSOR_D_CUTOFF,
-    });
   }
 
   get mode() {
@@ -214,21 +227,14 @@ export class GestureEngine {
 
     const events = [];
     const activation = this.#updateActivation(frame.hands, now, events);
-    this.#updateCursor(frame.hands, now, viewport);
+    if (events.length) for (const t of this.tracks.values()) resetPinch(t);
+    const pointers = this.#updatePointers(frame.hands, now, viewport, events);
 
-    const cursorHand = frame.hands.find((h) => h.id === this.cursor.handId) ?? frame.hands[0];
-    let gesture = cursorHand ? POSE_LABELS[cursorHand.features.pose] : 'Sin manos';
+    const first = frame.hands[0];
+    let gesture = first ? POSE_LABELS[this.tracks.get(first.id)?.pose ?? first.features.pose] : 'Sin manos';
     if (activation) gesture = `${activation.activating ? 'Activando' : 'Desactivando'} ${Math.round(activation.progress * 100)}%`;
 
-    return {
-      mode: this.mode,
-      active: this.active,
-      hands: frame.hands,
-      cursor: { ...this.cursor },
-      activation,
-      events,
-      gesture,
-    };
+    return { mode: this.mode, active: this.active, hands: frame.hands, pointers, activation, events, gesture };
   }
 
   // Palma abierta + quieta durante ACTIVATION_HOLD_MS alterna Dormido <-> Activo.
@@ -254,7 +260,7 @@ export class GestureEngine {
         hold.locked = false;
       }
       const drift = dist2(f.palm2D, hold.anchor) / f.size2D;
-      if (open && !hold.locked && (hold.start === null || drift > cfg.ACTIVATION_STILL_TOLERANCE)) {
+      if (open && !hold.locked && (hold.start === null || drift > cfg.STILL_TOLERANCE)) {
         hold.start = now;
         hold.anchor = f.palm2D;
       }
@@ -289,30 +295,142 @@ export class GestureEngine {
     return best;
   }
 
-  // La punta del índice de la mano principal mueve el cursor (solo con el sistema activo).
-  #updateCursor(hands, now, viewport) {
-    const c = this.cursor;
-    if (!this.active) {
-      c.visible = false;
-      c.handId = null;
-      return;
+  // Un cursor por mano en la punta del índice, más su pose estable, quietud y pellizco.
+  #updatePointers(hands, now, viewport, events) {
+    const cfg = this.cfg;
+    const pointers = [];
+
+    for (const hand of hands) {
+      const f = hand.features;
+      let t = this.tracks.get(hand.id);
+      if (!t) {
+        t = newTrack(cfg, now, f);
+        this.tracks.set(hand.id, t);
+      }
+      t.seen = now;
+
+      // Pose estable: una pose nueva tiene que durar POSE_CONFIRM_MS.
+      if (f.pose === t.pose) {
+        t.candidate = null;
+      } else {
+        if (f.pose !== t.candidate) {
+          t.candidate = f.pose;
+          t.candidateSince = now;
+        }
+        if (now - t.candidateSince >= cfg.POSE_CONFIRM_MS) {
+          t.pose = f.pose;
+          t.poseSince = t.candidateSince;
+          t.candidate = null;
+        }
+      }
+
+      // Quietud de la palma.
+      if (dist2(f.palm2D, t.stillAnchor) / f.size2D > cfg.STILL_TOLERANCE) {
+        t.stillAnchor = f.palm2D;
+        t.stillSince = now;
+      }
+
+      // Cursor: punta del índice suavizada, en píxeles de pantalla.
+      const s = hand.screen;
+      const [tx, ty] = t.tipFilter.filter([s[LM.INDEX_TIP].x, s[LM.INDEX_TIP].y], now);
+      t.history.push({ t: now, x: tx, y: ty });
+      while (t.history.length > 2 && now - t.history[0].t > cfg.PINCH_LOOKBACK_MS * 3) t.history.shift();
+      const [mx, my] = t.midFilter.filter(
+        [(s[LM.THUMB_TIP].x + s[LM.INDEX_TIP].x) / 2, (s[LM.THUMB_TIP].y + s[LM.INDEX_TIP].y) / 2],
+        now,
+      );
+
+      if (this.active) this.#updatePinch(t, hand, f, now, { tx, ty, mx, my }, events);
+
+      // Mientras pellizca, el cursor sigue al punto medio pulgar-índice desde el punto de agarre.
+      const x = t.pinching ? t.grab.x + (mx - t.midStart.x) : tx;
+      const y = t.pinching ? t.grab.y + (my - t.midStart.y) : ty;
+      let palmX = 0;
+      let palmY = 0;
+      for (const i of PALM_POINTS) {
+        palmX += s[i].x / PALM_POINTS.length;
+        palmY += s[i].y / PALM_POINTS.length;
+      }
+
+      hand.track = t;
+      if (!this.active) continue;
+      pointers.push({
+        handId: hand.id,
+        x: clamp(x, 0, viewport.width),
+        y: clamp(y, 0, viewport.height),
+        pinching: t.pinching,
+        pose: t.pose,
+        poseMs: now - t.poseSince,
+        holdMs: now - Math.max(t.poseSince, t.stillSince), // pose actual + mano quieta
+        palm: { x: palmX, y: palmY },
+        thumbTip: s[LM.THUMB_TIP],
+        indexTip: s[LM.INDEX_TIP],
+        pinchRatio: f.pinchRatio,
+        palm2D: f.palm2D,
+        size2D: f.size2D,
+      });
     }
-    const hand = hands.find((h) => h.id === c.handId) ?? hands[0];
-    if (!hand) {
-      c.visible = false;
-      return;
+
+    // Manos que dejaron de verse: un pellizco en curso se suelta (sin clic).
+    for (const [id, t] of this.tracks) {
+      if (now - t.seen <= cfg.POSE_GRACE_MS) continue;
+      if (t.pinching) events.push({ type: 'pinchend', handId: id, x: t.lastX, y: t.lastY, lost: true });
+      this.tracks.delete(id);
     }
-    if (hand.id !== c.handId) {
-      this.cursorFilter.reset();
-      c.handId = hand.id;
+    for (const p of pointers) {
+      const t = this.tracks.get(p.handId);
+      t.lastX = p.x;
+      t.lastY = p.y;
     }
-    const tip = hand.landmarks[LM.INDEX_TIP];
-    const { left, right, top, bottom } = this.cfg.CURSOR_BOX;
-    const nx = clamp01((tip.x - left) / (right - left));
-    const ny = clamp01((tip.y - top) / (bottom - top));
-    const [x, y] = this.cursorFilter.filter([nx * viewport.width, ny * viewport.height], now);
-    c.x = x;
-    c.y = y;
-    c.visible = true;
+    return pointers;
   }
+
+  // Pellizco con histéresis: agarra con la pinza bien cerrada, suelta solo al abrirla claramente.
+  #updatePinch(t, hand, f, now, { tx, ty, mx, my }, events) {
+    const cfg = this.cfg;
+    if (!t.pinching) {
+      const closed = f.pinchRatio < cfg.PINCH_GRAB_RATIO && !f.fistLike;
+      t.pinchFrames = closed ? t.pinchFrames + 1 : 0;
+      if (t.pinchFrames < cfg.PINCH_CONFIRM_FRAMES) return;
+      const past = t.history.find((h) => h.t >= now - cfg.PINCH_LOOKBACK_MS) ?? { x: tx, y: ty };
+      t.pinching = true;
+      t.pinchFrames = 0;
+      t.grab = { x: past.x, y: past.y };
+      t.midStart = { x: mx, y: my };
+      events.push({ type: 'pinchstart', handId: hand.id, x: past.x, y: past.y });
+    } else {
+      const open = f.pinchRatio > cfg.PINCH_RELEASE_RATIO;
+      t.pinchFrames = open ? t.pinchFrames + 1 : 0;
+      if (t.pinchFrames < cfg.PINCH_CONFIRM_FRAMES) return;
+      t.pinching = false;
+      t.pinchFrames = 0;
+      events.push({ type: 'pinchend', handId: hand.id, x: t.grab.x + (mx - t.midStart.x), y: t.grab.y + (my - t.midStart.y) });
+    }
+  }
+}
+
+function newTrack(cfg, now, f) {
+  const filter = () =>
+    new OneEuroFilter({ minCutoff: cfg.CURSOR_MIN_CUTOFF, beta: cfg.CURSOR_BETA, dCutoff: cfg.CURSOR_D_CUTOFF });
+  return {
+    seen: now,
+    pose: f.pose,
+    poseSince: now,
+    candidate: null,
+    candidateSince: now,
+    stillAnchor: f.palm2D,
+    stillSince: now,
+    tipFilter: filter(),
+    midFilter: filter(),
+    history: [],
+    pinching: false,
+    pinchFrames: 0,
+    grab: null,
+    midStart: null,
+  };
+}
+
+function resetPinch(t) {
+  t.pinching = false;
+  t.pinchFrames = 0;
 }

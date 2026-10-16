@@ -1,3 +1,5 @@
+import { createProjector } from '../js/hand-tracking.js';
+
 // Mano sintética para pruebas: genera los 21 landmarks de MediaPipe a partir de una pose.
 // Coordenadas de la mano en cm: x lateral (hacia el pulgar), y desde la muñeca hacia los
 // dedos, z hacia el frente de la palma (hacia donde se doblan los dedos).
@@ -43,13 +45,15 @@ function fingerPoints(name, curl) {
  * @param {'open'|'side'|'up'|'folded'} pose.thumb
  * @param {{x:number, y:number}} pose.at  posición de la muñeca en el encuadre (0..1)
  * @param {number} pose.scale  fracción del alto del encuadre que ocupa 1 cm
+ * @param {number|boolean} pose.pinch  0..1: cuánto se acerca la punta del pulgar a la del índice
  */
-export function makeHand({ curl = {}, thumb = 'open', at = { x: 0.5, y: 0.75 }, scale = 0.022, id = 1, pinch = false } = {}) {
+export function makeHand({ curl = {}, thumb = 'open', at = { x: 0.5, y: 0.75 }, scale = 0.022, id = 1, pinch = 0 } = {}) {
   const cm = [[0, 0, 0], ...THUMBS[thumb]];
   for (const name of FINGER_ORDER) cm.push(...fingerPoints(name, curl[name] ?? 0));
-  if (pinch) {
-    const tip = cm[8];
-    cm[4] = [tip[0] + 0.6, tip[1], tip[2] + 0.4];
+  const k = Number(pinch);
+  if (k > 0) {
+    const target = [cm[8][0] + 0.6, cm[8][1], cm[8][2] + 0.4];
+    cm[4] = cm[4].map((v, i) => v + (target[i] - v) * k);
   }
   const aspect = 4 / 3;
   return {
@@ -70,6 +74,9 @@ export const POSES = {
   pinch: { curl: { index: 0.35, middle: 0.2, ring: 0.2, pinky: 0.2 }, thumb: 'open', pinch: true },
 };
 
-export function frameOf(hands, timestamp) {
+/** Frame como el de hand-tracking.js, con los puntos ya proyectados a la pantalla. */
+export function frameOf(hands, timestamp, view = { width: 900, height: 400 }) {
+  const project = createProjector(640, 480, view.width, view.height);
+  for (const h of hands) h.screen = h.landmarks.map((p) => project(p.x, p.y));
   return { hands, timestamp, videoWidth: 640, videoHeight: 480 };
 }

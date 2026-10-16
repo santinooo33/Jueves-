@@ -24,7 +24,7 @@ No usar artefactos de claude.ai para probar Jueves: no tienen acceso a la cámar
 Por fases; al final de cada una, parar y esperar las pruebas y el feedback del usuario.
 
 1. ✅ Cámara + detección + esqueleto + cursor suave + activación con palma.
-2. Pellizco, ventana de prueba movible y redimensionable.
+2. ✅ Pellizco, ventana de prueba movible y redimensionable (+ zoom con dos manos y cerrar con puño).
 3. Escritorio completo con barra de apps y las 3 mini-apps (reloj, notas, calculadora).
 4. Retroceder, inicio, apps recientes y cambio de app por inclinación.
 5. Pulido visual, sonidos y rendimiento.

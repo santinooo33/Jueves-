@@ -13,7 +13,7 @@ function runFrames(engine, seconds, handFn, t0 = 0) {
   const n = Math.round(seconds * FPS);
   for (let i = 0; i < n; i++) {
     const t = t0 + (i * 1000) / FPS;
-    states.push(engine.update(frameOf(handFn(t, i), t), VIEW));
+    states.push(engine.update(frameOf(handFn(t, i), t, VIEW), VIEW));
   }
   return { states, end: t0 + (n * 1000) / FPS, events: states.flatMap((s) => s.events) };
 }
@@ -81,32 +81,98 @@ test('tolera que el detector pierda la mano un instante', () => {
   assert.deepEqual(run.events.map((e) => e.type), ['activate']);
 });
 
-test('dormido no hay cursor; activo, el índice lo mueve dentro de la zona configurada', () => {
+function activeEngine() {
   const engine = new GestureEngine(CONFIG);
-  const sleeping = engine.update(frameOf([makeHand(POSES.point)], 0), VIEW);
-  assert.equal(sleeping.cursor.visible, false);
-
-  const act = runFrames(engine, 2.3, () => [makeHand(POSES.palm)]);
+  const run = runFrames(engine, 2.3, () => [makeHand(POSES.palm)]);
   assert.equal(engine.active, true);
+  return { engine, t: run.end + 1000 }; // pausa para que la palma "suelte"
+}
 
-  // Coloca la punta del índice en el centro de CURSOR_BOX.
-  const { left, right, top, bottom } = CONFIG.CURSOR_BOX;
-  const probe = makeHand(POSES.point);
-  const tip = probe.landmarks[LM.INDEX_TIP];
-  const target = { x: (left + right) / 2, y: (top + bottom) / 2 };
-  const shifted = () => {
-    const h = makeHand(POSES.point);
-    for (const p of h.landmarks) {
-      p.x += target.x - tip.x;
-      p.y += target.y - tip.y;
+const pinchesOf = (run) => run.events.filter((e) => e.type.startsWith('pinch')).map((e) => e.type);
+
+test('dormido no hay cursor; activo, el cursor queda sobre la punta del índice', () => {
+  const engine = new GestureEngine(CONFIG);
+  const sleeping = engine.update(frameOf([makeHand(POSES.point)], 0, VIEW), VIEW);
+  assert.equal(sleeping.pointers.length, 0);
+
+  const { engine: e2, t } = activeEngine();
+  const run = runFrames(e2, 1, () => [makeHand({ ...POSES.point, at: { x: 0.4, y: 0.8 } })], t);
+  const last = run.states.at(-1);
+  const tip = last.hands[0].screen[LM.INDEX_TIP];
+  assert.equal(last.pointers.length, 1);
+  assert.ok(Math.hypot(last.pointers[0].x - tip.x, last.pointers[0].y - tip.y) < 1, 'cursor sobre la punta');
+});
+
+test('un cursor por mano', () => {
+  const { engine, t } = activeEngine();
+  const two = () => [makeHand({ ...POSES.point, id: 1, at: { x: 0.3, y: 0.8 } }), makeHand({ ...POSES.point, id: 2, at: { x: 0.7, y: 0.8 } })];
+  const run = runFrames(engine, 0.5, two, t);
+  assert.equal(run.states.at(-1).pointers.length, 2);
+});
+
+test('pellizco con histéresis: agarra cerrado, sigue agarrado a medio abrir, suelta abierto', () => {
+  const { engine, t } = activeEngine();
+  const ratio = (k) => analyzeHand(makeHand({ ...POSES.point, pinch: k }), 4 / 3).pinchRatio;
+  // Una apertura intermedia: entre el umbral de agarrar y el de soltar.
+  let mid = 0;
+  for (let k = 1; k >= 0; k -= 0.01) {
+    const r = ratio(k);
+    if (r > CONFIG.PINCH_GRAB_RATIO + 0.03 && r < CONFIG.PINCH_RELEASE_RATIO - 0.03) {
+      mid = k;
+      break;
     }
-    return [h];
-  };
-  const run = runFrames(engine, 1, shifted, act.end);
-  const { cursor } = run.states.at(-1);
-  assert.equal(cursor.visible, true);
-  assert.ok(Math.abs(cursor.x - VIEW.width / 2) < 3, `x=${cursor.x}`);
-  assert.ok(Math.abs(cursor.y - VIEW.height / 2) < 3, `y=${cursor.y}`);
+  }
+  assert.ok(mid > 0, 'hay una apertura intermedia');
+
+  const closed = runFrames(engine, 0.3, () => [makeHand({ ...POSES.point, pinch: 1 })], t);
+  assert.deepEqual(pinchesOf(closed), ['pinchstart']);
+  const half = runFrames(engine, 0.5, () => [makeHand({ ...POSES.point, pinch: mid })], closed.end);
+  assert.deepEqual(pinchesOf(half), [], 'a medio abrir sigue agarrado');
+  assert.equal(half.states.at(-1).pointers[0].pinching, true);
+  const open = runFrames(engine, 0.3, () => [makeHand({ ...POSES.point, pinch: 0 })], half.end);
+  assert.deepEqual(pinchesOf(open), ['pinchend']);
+});
+
+test('un solo frame con los dedos juntos no es un pellizco', () => {
+  const { engine, t } = activeEngine();
+  const run = runFrames(engine, 1, (time, i) => [makeHand({ ...POSES.point, pinch: i === 10 ? 1 : 0 })], t);
+  assert.deepEqual(pinchesOf(run), []);
+});
+
+test('el puño no cuenta como pellizco', () => {
+  const { engine, t } = activeEngine();
+  const run = runFrames(engine, 1, () => [makeHand({ ...POSES.fist, pinch: 1 })], t);
+  assert.deepEqual(pinchesOf(run), []);
+});
+
+test('el punto de agarre es donde apuntaba el índice antes de juntar los dedos', () => {
+  const { engine, t } = activeEngine();
+  const aim = runFrames(engine, 0.6, () => [makeHand(POSES.point)], t);
+  const before = aim.states.at(-1).pointers[0];
+  // Al pellizcar, la punta del índice se desplaza hacia el pulgar.
+  const pinch = runFrames(engine, 0.3, () => [makeHand({ ...POSES.pinch })], aim.end);
+  const start = pinch.events.find((e) => e.type === 'pinchstart');
+  const tipNow = pinch.states.at(-1).hands[0].screen[LM.INDEX_TIP];
+  assert.ok(Math.hypot(start.x - before.x, start.y - before.y) < 6, 'agarra donde apuntaba');
+  assert.ok(Math.hypot(tipNow.x - before.x, tipNow.y - before.y) > 15, 'la punta sí se movió al pellizcar');
+});
+
+test('arrastrar: mientras pellizca, el cursor sigue a la mano', () => {
+  const { engine, t } = activeEngine();
+  const grab = runFrames(engine, 0.3, () => [makeHand({ ...POSES.pinch })], t);
+  const p0 = grab.states.at(-1).pointers[0];
+  const move = runFrames(engine, 1, () => [makeHand({ ...POSES.pinch, at: { x: 0.6, y: 0.75 } })], grab.end);
+  const p1 = move.states.at(-1).pointers[0];
+  assert.equal(p1.pinching, true);
+  assert.ok(p1.x - p0.x > 60, `se movió ${p1.x - p0.x}px`);
+});
+
+test('pose estable y tiempo quieto: la L cuenta tiempo y un parpadeo no la cambia', () => {
+  const { engine, t } = activeEngine();
+  const run = runFrames(engine, 0.8, (time, i) => [makeHand(i === 12 ? POSES.palm : POSES.L)], t);
+  const p = run.states.at(-1).pointers[0];
+  assert.equal(p.pose, 'L');
+  assert.ok(p.holdMs > 600, `holdMs=${p.holdMs}`);
 });
 
 test('el filtro One Euro reduce el temblor', () => {
