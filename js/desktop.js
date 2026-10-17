@@ -40,6 +40,11 @@ export class Desktop {
     return this.visibleWindows.at(-1) ?? null;
   }
 
+  /** Ventana visible que contiene un elemento (null si está fuera de las ventanas). */
+  windowFor(el) {
+    return this.visibleWindows.find((w) => w.el.contains(el)) ?? null;
+  }
+
   windowOf(appId) {
     return this.windows.find((w) => w.appId === appId) ?? null;
   }
@@ -218,8 +223,8 @@ class DesktopWindow {
         <span class="win-icon" aria-hidden="true"></span>
         <span class="win-name"></span>
         <span class="win-size"></span>
-        <button class="win-btn min" type="button" data-pinch aria-label="Minimizar">–</button>
-        <button class="win-btn close" type="button" data-pinch aria-label="Cerrar">✕</button>
+        <button class="win-btn min" type="button" data-pinch data-magnet="off" aria-label="Minimizar">–</button>
+        <button class="win-btn close" type="button" data-pinch data-magnet="off" aria-label="Cerrar">✕</button>
       </header>
       <div class="win-body"></div>`;
     // El ícono viene del registro de apps (SVG propio); el título es texto.

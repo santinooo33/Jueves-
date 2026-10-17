@@ -343,7 +343,7 @@ export class UIFeedback {
           const f = hand.features;
           const act = hand.activation ?? { drift: 0, elapsed: 0 };
           const p = state.pointers.find((q) => q.handId === hand.id);
-          const doing = p ? ` · ${p.pinching ? '<b>pinza</b> ' : ''}${HOVER_LABELS[p.hover] ?? ''}` : '';
+          const doing = p ? ` · ${p.pinching ? '<b>pinza</b> ' : ''}${HOVER_LABELS[p.hover] ?? ''}${p.hoverLocked ? ' (fijado)' : ''}` : '';
           const fingers = Object.keys(FINGER_NAMES)
             .map((key) => {
               const finger = f.fingers[key];

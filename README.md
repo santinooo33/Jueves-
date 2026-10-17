@@ -72,7 +72,10 @@ Abre en el celular la URL `https://….trycloudflare.com` que imprime.
      dedos; lleno = pellizco. Para soltar, abre los dedos o cierra el puño.
    - **Mover:** pellizca la barra de título o el borde y arrastra. El borde se ilumina al
      acercar el dedo y la ventana sigue el punto medio entre pulgar e índice.
-   - **Pulsar un botón:** pellizca encima y suelta (el clic ocurre al soltar).
+   - **Pulsar un botón:** apunta y pellizca; el clic ocurre al cerrar la pinza (soltar o mover
+     la mano después ya no lo cancela). El botón se ilumina al acercarte (el cursor se "pega" a
+     los botones a menos de 20 px) y al empezar a juntar los dedos queda fijo: se pulsa el que
+     estaba iluminado aunque la punta del índice baje al cerrar la pinza.
    - **Cambiar tamaño:** forma una **L** (pulgar e índice abiertos) sobre la ventana y déjala
      quieta ½ s. La ventana brilla en ámbar: abre los dedos para agrandar, júntalos para achicar.
      Sales bajando la mano o cerrando el puño.

@@ -209,6 +209,24 @@ test('el punto de agarre es donde apuntaba el índice antes de juntar los dedos'
   assert.ok(Math.hypot(tipNow.x - before.x, tipNow.y - before.y) > 15, 'la punta sí se movió al pellizcar');
 });
 
+test('pellizco lento con la mano bajando: agarra donde apuntaba cuando empezó a cerrar', () => {
+  const { engine, t } = activeEngine();
+  const aim = runFrames(engine, 0.6, () => [makeHand({ ...POSES.point, at: { x: 0.5, y: 0.75 } })], t);
+  const before = aim.states.at(-1).pointers[0];
+  // 12 frames (0,4 s) cerrando los dedos poco a poco mientras la mano baja ~5 % del encuadre.
+  const close = runFrames(
+    engine,
+    0.6,
+    (time, i) => [makeHand({ ...POSES.point, pinch: Math.min(1, i / 12), at: { x: 0.5, y: 0.75 + Math.min(i, 12) * 0.004 } })],
+    aim.end,
+  );
+  const start = close.events.find((e) => e.type === 'pinchstart');
+  assert.ok(start, 'hubo pellizco');
+  const drift = Math.hypot(start.x - before.x, start.y - before.y);
+  assert.ok(drift < 8, `agarre a ${drift.toFixed(1)} px de donde apuntaba`);
+  assert.ok(close.states.some((st) => st.pointers[0].closingSince != null), 'detecta que los dedos se están juntando');
+});
+
 test('arrastrar: mientras pellizca, el cursor sigue a la mano', () => {
   const { engine, t } = activeEngine();
   const grab = runFrames(engine, 0.3, () => [makeHand({ ...POSES.pinch })], t);

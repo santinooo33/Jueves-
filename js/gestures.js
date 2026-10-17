@@ -43,9 +43,12 @@ export const CONFIG = {
   // metida en la palma; en un pellizco sale a buscar al pulgar aunque los otros dedos estén doblados.
   PINCH_MIN_INDEX_REACH: 0.55,
   PINCH_RELEASE_REACH: 0.45, // si la punta del índice vuelve a la palma (cerrar el puño) también suelta
-  // Al juntar los dedos la punta del índice baja hacia el pulgar: el punto de agarre es donde
-  // estaba el cursor este tiempo antes, así el clic cae donde apuntabas.
-  PINCH_LOOKBACK_MS: 200,
+  // Al juntar los dedos la punta del índice baja hacia el pulgar. Para que el clic caiga donde
+  // apuntabas se mira atrás hasta el momento en que los dedos empezaron a cerrarse: cuando la
+  // apertura bajó más que esto respecto de la máxima reciente…
+  PINCH_CLOSING_DROP: 0.12,
+  PINCH_CLOSING_WINDOW_MS: 700, // …dentro de este tiempo
+  PINCH_LOOKBACK_MS: 200, // si no se detecta ese momento, se mira este tiempo atrás
 
   // Cursor (uno por mano), en la punta del índice. Suavizado One Euro en píxeles:
   // minCutoff menor = menos temblor; beta mayor = menos retraso al moverse rápido.
@@ -57,7 +60,13 @@ export const CONFIG = {
   EDGE_GRAB_INSIDE_PX: 16, // ancho del borde agarrable hacia dentro de la ventana
   EDGE_GRAB_OUTSIDE_PX: 22, // y hacia fuera (el dedo no tiene que caer justo en la línea)
   EDGE_GLOW_PX: 70, // a esta distancia del borde empieza a iluminarse
-  CLICK_MAX_MOVE_PX: 45, // si el pellizco se mueve más que esto, ya no cuenta como clic
+  // Botones: el clic se dispara al pellizcar (no al soltar) sobre el botón iluminado.
+  MAGNET_PX: 20, // un botón a menos de esto del cursor se ilumina y atrae al cursor
+  MAGNET_PULL: 0.5, // cuánto se acerca el cursor al centro del botón (0 = nada, 1 = al centro)
+  MAGNET_MAX_SHIFT: 24, // y como máximo esto, para que no se separe mucho del dedo
+  // Al juntar los dedos queda fijo el botón iluminado cuando empezaron a cerrarse, salvo que la
+  // mano se aleje más que esto de él.
+  HOVER_LOCK_RELEASE_PX: 60,
   RESIZE_HOLD_MS: 500, // "L" quieta sobre una ventana durante este tiempo → modo tamaño
   RESIZE_SENSITIVITY: 1.5, // tamaño = tamaño inicial × (apertura / apertura inicial) ^ esto
   RESIZE_EXIT_DROP: 1.2, // bajar la palma esto (× tamaño de la palma) sale del modo tamaño
@@ -350,7 +359,7 @@ export class GestureEngine {
       const s = hand.screen;
       const [tx, ty] = t.tipFilter.filter([s[LM.INDEX_TIP].x, s[LM.INDEX_TIP].y], now);
       t.history.push({ t: now, x: tx, y: ty });
-      while (t.history.length > 2 && now - t.history[0].t > cfg.PINCH_LOOKBACK_MS * 3) t.history.shift();
+      while (t.history.length > 2 && now - t.history[0].t > cfg.PINCH_CLOSING_WINDOW_MS) t.history.shift();
       const [mx, my] = t.midFilter.filter(
         [(s[LM.THUMB_TIP].x + s[LM.INDEX_TIP].x) / 2, (s[LM.THUMB_TIP].y + s[LM.INDEX_TIP].y) / 2],
         now,
@@ -381,6 +390,8 @@ export class GestureEngine {
         pinching: t.pinching,
         // 0..1: cuánto falta para cerrar el pellizco (para que el cursor se vaya llenando)
         pinchLevel: t.pinching ? 1 : pinchLevel(t.pinchSmooth, f, cfg),
+        // Momento en que los dedos empezaron a juntarse (null si no se están juntando).
+        closingSince: t.closingSince,
         pose: t.pose,
         poseMs: now - t.poseSince,
         holdMs: now - Math.max(t.poseSince, t.stillSince), // pose actual + mano quieta
@@ -413,11 +424,18 @@ export class GestureEngine {
     const cfg = this.cfg;
     t.pinchSmooth = t.pinchSmooth == null ? f.pinchRatio : t.pinchSmooth + (f.pinchRatio - t.pinchSmooth) * cfg.PINCH_SMOOTHING;
     const ratio = t.pinchSmooth;
+    t.ratios.push({ t: now, r: ratio });
+    while (t.ratios.length > 2 && now - t.ratios[0].t > cfg.PINCH_CLOSING_WINDOW_MS) t.ratios.shift();
     if (!t.pinching) {
+      // ¿Se están juntando los dedos? Desde el último momento en que estuvieron más abiertos.
+      let top = t.ratios[0];
+      for (const e of t.ratios) if (e.r >= top.r) top = e;
+      t.closingSince = ratio < top.r - cfg.PINCH_CLOSING_DROP ? top.t : null;
       const closed = ratio < cfg.PINCH_GRAB_RATIO && f.indexReach >= cfg.PINCH_MIN_INDEX_REACH;
       t.pinchFrames = closed ? t.pinchFrames + 1 : 0;
       if (t.pinchFrames < cfg.PINCH_CONFIRM_FRAMES) return;
-      const past = t.history.find((h) => h.t >= now - cfg.PINCH_LOOKBACK_MS) ?? { x: tx, y: ty };
+      const since = t.closingSince ?? now - cfg.PINCH_LOOKBACK_MS;
+      const past = t.history.find((h) => h.t >= since) ?? { x: tx, y: ty };
       t.pinching = true;
       t.pinchFrames = 0;
       t.grab = { x: past.x, y: past.y };
@@ -456,6 +474,8 @@ function newTrack(cfg, now, f) {
     tipFilter: filter(),
     midFilter: filter(),
     history: [],
+    ratios: [],
+    closingSince: null,
     lastClosed: null,
     pinchSmooth: null,
     pinching: false,
