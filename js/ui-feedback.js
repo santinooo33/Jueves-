@@ -32,7 +32,7 @@ const STATUS = {
 const HINTS = {
   noHands: 'Muestra tu mano a la cámara',
   sleep: 'Palma abierta y quieta 2 s para activar',
-  active: 'Pellizca la barra para mover · L quieta: tamaño · puño: cerrar · meñique arriba: dormir',
+  active: 'Pellizca un ícono de abajo para abrir una app · meñique arriba: dormir',
   resize: 'Abre o junta pulgar e índice · baja la mano o cierra el puño para salir',
 };
 
@@ -134,7 +134,8 @@ export class UIFeedback {
     this.#updateCursors(state.pointers);
     const mode = state.active ? ix.mode : 'sleep';
     this.#updateStatus(mode);
-    this.#updateHint(state.hands.length === 0 ? 'noHands' : mode);
+    // Con el sistema activo no se avisa "muestra tu mano": solo estorbaría sobre las ventanas.
+    this.#updateHint(mode === 'sleep' && state.hands.length === 0 ? 'noHands' : mode);
     for (const e of state.events) this.#playEvent(e, project);
 
     if (this.debug && frame.timestamp - this.lastDebugUpdate > 100) {
@@ -291,11 +292,16 @@ export class UIFeedback {
   #updateHint(key) {
     if (key === this.hint) return;
     this.hint = key;
-    this.hintEl.textContent = HINTS[key];
-    this.hintEl.classList.remove('faded');
     clearTimeout(this.hintTimer);
-    // Con el sistema activo la pista se retira sola para no tapar las ventanas.
-    if (key === 'active' || key === 'resize') this.hintTimer = setTimeout(() => this.hintEl.classList.add('faded'), 6000);
+    if (key === 'sleep' || key === 'noHands') this.activeHintShown = false;
+    // La pista de "activo" se muestra una vez por activación y se retira sola a los 6 s.
+    const repeat = key === 'active' && this.activeHintShown;
+    this.hintEl.textContent = HINTS[key];
+    this.hintEl.classList.toggle('faded', repeat);
+    if (key === 'active') this.activeHintShown = true;
+    if (!repeat && (key === 'active' || key === 'resize')) {
+      this.hintTimer = setTimeout(() => this.hintEl.classList.add('faded'), 6000);
+    }
   }
 
   #playEvent(event, project) {

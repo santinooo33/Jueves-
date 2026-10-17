@@ -368,10 +368,9 @@ export class GestureEngine {
         palmY += s[i].y / PALM_POINTS.length;
       }
 
-      if (t.pinching) {
-        t.path.push({ t: now, x, y });
-        while (t.path.length > 2 && now - t.path[0].t > cfg.PINCH_LOOKBACK_MS * 3) t.path.shift();
-      }
+      // Último punto con la pinza bien cerrada: al soltar, la ventana vuelve ahí (lo que se movió
+      // mientras se abrían los dedos no cuenta).
+      if (t.pinching && t.pinchSmooth < cfg.PINCH_GRAB_RATIO) t.lastClosed = { x, y };
 
       hand.track = t;
       if (!this.active) continue;
@@ -423,17 +422,17 @@ export class GestureEngine {
       t.pinchFrames = 0;
       t.grab = { x: past.x, y: past.y };
       t.midStart = { x: mx, y: my };
-      t.path = [];
+      t.lastClosed = null;
       events.push({ type: 'pinchstart', handId: hand.id, x: past.x, y: past.y });
     } else {
       const opened = ratio > cfg.PINCH_RELEASE_RATIO || f.indexReach < cfg.PINCH_RELEASE_REACH;
       t.pinchFrames = opened ? t.pinchFrames + 1 : 0;
       if (t.pinchFrames < cfg.PINCH_RELEASE_FRAMES) return;
-      // Se suelta donde estaba el cursor antes de empezar a abrir los dedos.
-      const past = t.path.find((h) => h.t >= now - cfg.PINCH_LOOKBACK_MS) ?? t.path.at(-1) ?? t.grab;
+      // Se suelta donde estaba el cursor justo antes de empezar a abrir los dedos.
+      const at = t.lastClosed ?? t.grab;
       t.pinching = false;
       t.pinchFrames = 0;
-      events.push({ type: 'pinchend', handId: hand.id, x: past.x, y: past.y });
+      events.push({ type: 'pinchend', handId: hand.id, x: at.x, y: at.y });
     }
   }
 }
@@ -457,7 +456,7 @@ function newTrack(cfg, now, f) {
     tipFilter: filter(),
     midFilter: filter(),
     history: [],
-    path: [],
+    lastClosed: null,
     pinchSmooth: null,
     pinching: false,
     pinchFrames: 0,

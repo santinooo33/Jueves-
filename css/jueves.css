@@ -235,7 +235,7 @@ body.is-debug #debug-btn {
   position: fixed;
   top: calc(var(--pad-t) + 50px);
   left: 50%;
-  z-index: 5;
+  z-index: 1; /* por debajo de las ventanas: si hay una ahí, la tapa */
   transform: translateX(-50%);
   display: none;
   max-width: calc(100vw - 32px);
@@ -382,7 +382,9 @@ body:not(.is-active) .dock {
   flex-direction: column;
   border: 1px solid rgba(var(--cyan-rgb), 0.3);
   border-radius: 14px;
-  background: linear-gradient(160deg, rgba(14, 46, 76, 0.84), rgba(4, 17, 33, 0.88));
+  /* Opaca: con ventanas superpuestas, incluso un 4 % de transparencia deja leer el texto de
+     las de atrás. El "vidrio" lo dan el degradado, el borde y el brillo. */
+  background: linear-gradient(160deg, rgb(13, 42, 70), rgb(4, 16, 31));
   box-shadow:
     0 18px 50px rgba(0, 0, 0, 0.45),
     0 0 calc(var(--g) * 26px) rgba(var(--ring), calc(var(--g) * 0.55)),
@@ -391,21 +393,35 @@ body:not(.is-active) .dock {
   color: var(--text);
   pointer-events: auto;
   will-change: transform;
-  transition: opacity 0.25s, scale 0.25s, border-color 0.25s;
+  /* scale y translate con la misma duración: así el centro viaja en línea recta (ver abajo) */
+  transition: opacity 0.3s, scale 0.3s, translate 0.3s, border-color 0.25s;
 }
 
 .window.focused {
   border-color: rgba(var(--cyan-rgb), 0.55);
 }
 
-.window.opening {
+/* La posición va en `transform`; las animaciones usan `scale` y `translate`, que se aplican
+   después. Para que el centro (x + w/2) llegue al punto P con escala s hace falta
+   translate = P − w/2 − s·x. Al abrir crece desde su ícono y al minimizar vuelve a él. */
+.window.opening,
+.window.minimized {
   opacity: 0;
-  scale: 0.9;
+  scale: 0.08;
+  translate: calc(var(--dock-x) - var(--w) / 2 - var(--x) * 0.08) calc(var(--dock-y) - var(--h) / 2 - var(--y) * 0.08);
 }
 
+.window.minimized {
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.3s, scale 0.3s, translate 0.3s, visibility 0s 0.3s;
+}
+
+/* Al cerrar se encoge sobre su propio centro: translate = (1 − s)·posición. */
 .window.closing {
   opacity: 0;
   scale: 0.82;
+  translate: calc(var(--x) * 0.18) calc(var(--y) * 0.18);
   pointer-events: none;
 }
 
@@ -469,6 +485,12 @@ body:not(.is-active) .dock {
   text-transform: uppercase;
 }
 
+.win-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 .win-name {
   flex: 1;
   min-width: 0;
@@ -499,8 +521,20 @@ body:not(.is-active) .dock {
   transition: background-color 0.12s, color 0.12s, border-color 0.12s;
 }
 
-.win-btn.hover,
-.win-btn.pressed {
+.win-btn.min {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.win-btn.min.hover,
+.win-btn.min.pressed {
+  border-color: rgba(var(--cyan-rgb), 0.55);
+  background: rgba(var(--cyan-rgb), 0.2);
+  color: #fff;
+}
+
+.win-btn.close.hover,
+.win-btn.close.pressed {
   border-color: rgba(255, 104, 128, 0.55);
   background: rgba(255, 104, 128, 0.22);
   color: #ffd6dd;
@@ -513,29 +547,7 @@ body:not(.is-active) .dock {
   padding: 12px 14px;
 }
 
-/* ── Ventana de prueba ── */
-.app-prueba {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.counter {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.counter output {
-  min-width: 60px;
-  color: #fff;
-  font-weight: 700;
-  font-size: 34px;
-  text-align: center;
-  text-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.6);
-}
-
+/* ── Botones de las apps ── */
 .key {
   min-width: 54px;
   height: 44px;
@@ -548,52 +560,432 @@ body:not(.is-active) .dock {
   transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s, scale 0.12s;
 }
 
-.key.small {
-  margin-left: auto;
-  padding: 0 12px;
-  font-size: 14px;
-  letter-spacing: 0.08em;
+.key.wide {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+}
+
+.key.running {
+  border-color: rgba(var(--amber-rgb), 0.7);
+  color: var(--amber);
 }
 
 .key.hover,
-.dock-btn.hover,
+.calc-key.hover,
+.kbd-key.hover,
+.tab.hover,
+.note-clear.hover,
+.dock-app.hover,
 .chip.hover {
   border-color: var(--cyan);
-  background: rgba(var(--cyan-rgb), 0.2);
+  background: rgba(var(--cyan-rgb), 0.22);
   box-shadow: 0 0 14px rgba(var(--cyan-rgb), 0.35);
 }
 
 .key.pressed,
-.dock-btn.pressed,
+.calc-key.pressed,
+.kbd-key.pressed,
+.tab.pressed,
+.note-clear.pressed,
+.dock-app.pressed,
 .chip.pressed {
-  scale: 0.94;
-  background: rgba(var(--cyan-rgb), 0.38);
+  scale: 0.93;
+  background: rgba(var(--cyan-rgb), 0.4);
 }
 
-.tips {
-  margin: 0;
-  padding-left: 18px;
+/* ── Calculadora ── */
+.calc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.calc-display {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid rgba(var(--cyan-rgb), 0.18);
+  border-radius: 10px;
+  background: rgba(0, 10, 20, 0.45);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.calc-expr {
+  min-height: 1.2em;
   color: var(--muted);
-  font-size: 13.5px;
-  line-height: 1.35;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.tips b {
+.calc-main {
+  color: #fff;
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.15;
+  text-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calc-main.long {
+  font-size: 20px;
+}
+
+.calc-keys {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: repeat(5, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 6px;
+}
+
+.calc-key {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(var(--cyan-rgb), 0.3);
+  border-radius: 9px;
+  background: rgba(var(--cyan-rgb), 0.07);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 20px;
+  transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s, scale 0.12s;
+}
+
+.calc-key.op {
+  color: var(--cyan);
+  background: rgba(var(--cyan-rgb), 0.14);
+}
+
+.calc-key.fn {
+  color: var(--amber);
+  font-size: 17px;
+}
+
+.calc-key.eq {
+  border-color: rgba(var(--cyan-rgb), 0.7);
+  background: rgba(var(--cyan-rgb), 0.32);
+  color: #fff;
+}
+
+/* ── Notas ── */
+.notas {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+}
+
+.note-view {
+  position: relative;
+  flex: 1;
+  min-height: 34px;
+  border: 1px solid rgba(var(--cyan-rgb), 0.18);
+  border-radius: 10px;
+  background: rgba(0, 10, 20, 0.45);
+}
+
+.note-text {
+  position: absolute;
+  inset: 0;
+  padding: 5px 84px 5px 10px;
+  overflow: hidden;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--cyan);
+  box-shadow: 0 0 6px var(--cyan);
+  animation: blink 1s steps(1) infinite;
+}
+
+.note-clear {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(var(--cyan-rgb), 0.3);
+  border-radius: 8px;
+  background: rgba(var(--cyan-rgb), 0.06);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 13px;
+  transition: background-color 0.12s, border-color 0.12s, scale 0.12s;
+}
+
+.note-clear.confirm {
+  border-color: rgba(255, 104, 128, 0.7);
+  background: rgba(255, 104, 128, 0.2);
+  color: #ffd6dd;
+}
+
+.kbd {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  height: 62%;
+  min-height: 140px;
+}
+
+.kbd-row {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  min-height: 0;
+}
+
+.kbd-key {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(var(--cyan-rgb), 0.28);
+  border-radius: 7px;
+  background: rgba(var(--cyan-rgb), 0.07);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 17px;
+  transition: background-color 0.1s, border-color 0.1s, box-shadow 0.1s, scale 0.1s;
+}
+
+.kbd.upper .k-char {
+  text-transform: uppercase;
+}
+
+.kbd-key.k-shift,
+.kbd-key.k-back,
+.kbd-key.k-layer,
+.kbd-key.k-enter {
+  flex: 1.45;
+  color: var(--cyan);
+  font-size: 15px;
+}
+
+.kbd-key.k-space {
+  flex: 4;
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+}
+
+.kbd-key.on {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+/* ── Reloj ── */
+.reloj {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.tab {
+  flex: 1;
+  height: 34px;
+  border: 1px solid rgba(var(--cyan-rgb), 0.25);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: background-color 0.12s, border-color 0.12s, scale 0.12s;
+}
+
+.tab.on {
+  border-color: rgba(var(--cyan-rgb), 0.6);
+  background: rgba(var(--cyan-rgb), 0.14);
+  color: var(--cyan);
+}
+
+.pane {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  gap: 14px;
+}
+
+.pane[hidden] {
+  display: none;
+}
+
+.analog {
+  flex: none;
+  height: 100%;
+  max-height: 170px;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 0 6px rgba(var(--cyan-rgb), 0.35));
+}
+
+.analog .face {
+  fill: rgba(0, 12, 24, 0.5);
+  stroke: rgba(var(--cyan-rgb), 0.5);
+  stroke-width: 1;
+}
+
+.analog .ticks line {
+  stroke: rgba(var(--cyan-rgb), 0.45);
+  stroke-width: 0.6;
+}
+
+.analog .ticks line.major {
+  stroke: var(--cyan);
+  stroke-width: 1.4;
+}
+
+.analog .hand {
+  stroke-linecap: round;
+}
+
+.analog .hand.h {
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+.analog .hand.m {
+  stroke: var(--cyan);
+  stroke-width: 2;
+}
+
+.analog .hand.s {
+  stroke: var(--amber);
+  stroke-width: 0.9;
+}
+
+.analog .hub {
+  fill: var(--amber);
+}
+
+.digital {
+  min-width: 0;
+}
+
+.digital .time {
+  color: #fff;
+  font-weight: 700;
+  font-size: 46px;
+  line-height: 1;
+  text-shadow: 0 0 16px rgba(var(--cyan-rgb), 0.55);
+}
+
+.digital .time small {
+  color: var(--cyan);
+  font-size: 22px;
+}
+
+.digital .date {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.digital .date::first-letter {
+  text-transform: uppercase;
+}
+
+.pane-crono {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.crono-time {
+  color: #fff;
+  font-weight: 700;
+  font-size: 40px;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 0 16px rgba(var(--cyan-rgb), 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.crono-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.laps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ── Gestos (ayuda) ── */
+.gestos ul {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gestos li {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  column-gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.g-icon {
+  grid-row: span 2;
+  color: var(--cyan);
+  font-weight: 700;
+  font-size: 19px;
+  text-align: center;
+}
+
+.g-what {
   color: var(--text);
   font-weight: 600;
 }
 
-/* ── Barra inferior ── */
+.g-does {
+  color: var(--muted);
+}
+
+/* ── Barra de apps ── */
 .dock {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--pad-b) + 6px);
+  bottom: calc(var(--pad-b) + 4px);
   z-index: 4;
   display: none;
-  gap: 8px;
-  padding: 6px;
+  gap: 6px;
+  padding: 3px 5px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--glass);
   transform: translateX(-50%);
   transition: opacity 0.4s, filter 0.4s;
@@ -603,20 +995,79 @@ body.is-running .dock {
   display: flex;
 }
 
-.dock-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 44px;
-  padding: 0 16px;
-  border: 1px solid rgba(var(--cyan-rgb), 0.35);
-  border-radius: 11px;
-  background: rgba(var(--cyan-rgb), 0.08);
+.dock-app {
+  position: relative;
+  display: grid;
+  width: 48px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--cyan);
+  transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s, scale 0.12s;
+}
+
+.dock-icon svg {
+  display: block;
+  width: 25px;
+  height: 25px;
+  filter: drop-shadow(0 0 5px rgba(var(--cyan-rgb), 0.5));
+}
+
+/* El nombre aparece encima del ícono al pasar el cursor. */
+.dock-label {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(4, 16, 30, 0.9);
   color: var(--text);
   font-weight: 600;
-  font-size: 15px;
-  letter-spacing: 0.06em;
-  transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s, scale 0.12s;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.15s, transform 0.15s;
+  pointer-events: none;
+}
+
+.dock-app.hover .dock-label {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Punto: app abierta (brillante si está al frente, tenue si está minimizada). */
+.dock-dot {
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--cyan);
+  opacity: 0;
+  transition: opacity 0.2s, width 0.2s, margin 0.2s;
+}
+
+.dock-app.running .dock-dot {
+  opacity: 0.6;
+}
+
+.dock-app.active .dock-dot {
+  width: 14px;
+  margin-left: -7px;
+  border-radius: 3px;
+  opacity: 1;
+  box-shadow: 0 0 6px var(--cyan);
+}
+
+.dock-app.minimized .dock-dot {
+  opacity: 0.35;
 }
 
 /* ── Efectos ── */
@@ -893,6 +1344,10 @@ body.is-debug .debug-panel {
 @keyframes pulse {
   from { transform: scale(0.4); opacity: 1; }
   to { transform: scale(16); opacity: 0; }
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
 }
 
 @keyframes ripple {

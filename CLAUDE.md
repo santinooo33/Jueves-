@@ -25,7 +25,7 @@ Por fases; al final de cada una, parar y esperar las pruebas y el feedback del u
 
 1. ✅ Cámara + detección + esqueleto + cursor suave + activación con palma.
 2. ✅ Pellizco, ventana de prueba movible y redimensionable (+ zoom con dos manos y cerrar con puño).
-3. Escritorio completo con barra de apps y las 3 mini-apps (reloj, notas, calculadora).
+3. ✅ Escritorio completo con barra de apps y las 3 mini-apps (reloj, notas, calculadora) + ayuda.
 4. Retroceder, inicio, apps recientes y cambio de app por inclinación.
 5. Pulido visual, sonidos y rendimiento.
 

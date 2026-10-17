@@ -10,14 +10,18 @@ frontal del celular. Corre en el navegador, sin frameworks. Usa
 > 🔒 **Privacidad:** el video se procesa solo en el dispositivo. Por red solo se descargan
 > la librería de MediaPipe y el modelo (una vez); ningún frame sale del navegador.
 
-## Estado: Fase 2
+## Estado: Fase 3
 
 - **Fase 1:** cámara de fondo en espejo, esqueleto de la mano, cursor suavizado (One Euro)
   pegado a la punta del índice, activar con **palma abierta y quieta 2 s**, dormir con el
   **meñique arriba 1 s**, indicador de estado y modo debug.
-- **Fase 2:** un cursor por mano, pellizco con histéresis (clic y agarrar), ventana de prueba
-  que se mueve, cambia de tamaño (L quieta o dos manos) y se cierra con el puño, y bordes que se
+- **Fase 2:** un cursor por mano, pellizco con histéresis (clic y agarrar), ventanas que se
+  mueven, cambian de tamaño (L quieta o dos manos) y se cierran con el puño, y bordes que se
   iluminan al acercar el dedo.
+- **Fase 3:** escritorio con barra de apps (abrir, traer al frente, minimizar y restaurar),
+  botón minimizar en cada ventana y las mini-apps **Reloj** (hora y cronómetro), **Notas**
+  (teclado en pantalla con ñ y tildes; el texto se guarda en el teléfono), **Calculadora** y
+  **Gestos** (ayuda, se abre la primera vez).
 
 ## Probarlo
 
@@ -75,8 +79,11 @@ Abre en el celular la URL `https://….trycloudflare.com` que imprime.
    - **Zoom con dos manos:** pellizca la ventana con una mano y luego con la otra; sepáralas
      o júntalas.
    - **Cerrar:** puño sobre la ventana (el borde se pone rojo y se cierra en 0,6 s).
-   - **Nueva ventana:** pellizca **＋ Ventana de prueba** en la barra inferior.
-6. Para dormir: **levanta el meñique** (los demás dedos doblados) y mantenlo quieto **1 s** →
+   - **Minimizar:** botón **–** de la barra de título; la ventana se encoge hacia su ícono.
+6. **Barra de apps** (abajo): pellizca un ícono para abrir la app. Si ya está abierta y al
+   frente, la minimiza; si está minimizada o detrás de otra, la trae al frente. Un punto bajo
+   el ícono indica que está abierta.
+7. Para dormir: **levanta el meñique** (los demás dedos doblados) y mantenlo quieto **1 s** →
    **Dormido**. Con el sistema activo, la palma abierta ya no lo duerme.
 
 ### Modo debug
@@ -108,15 +115,20 @@ js/main.js             arranque y bucle principal
 js/hand-tracking.js    cámara + MediaPipe → landmarks por frame (en espejo, con id estable por mano)
 js/gestures.js         umbrales (CONFIG), forma de la mano, activación, cursores y pellizco
 js/interaction.js      gestos → acciones: mover, pulsar, modo tamaño, zoom, cerrar
-js/desktop.js          ventanas: crear, enfocar, mover, redimensionar, cerrar y brillo del borde
-js/apps/prueba.js      ventana de prueba (contador)
+js/desktop.js          ventanas (abrir apps, enfocar, mover, redimensionar, minimizar, cerrar,
+                       brillo del borde) y barra de apps
+js/apps/index.js       registro de apps: nombre, ícono, tamaño
+js/apps/reloj.js       reloj analógico y digital + cronómetro
+js/apps/notas.js       notas con teclado en pantalla
+js/apps/calculadora.js calculadora (sin eval; × y ÷ antes que + y −)
+js/apps/gestos.js      ayuda con los gestos
 js/one-euro-filter.js  suavizado del cursor
 js/ui-feedback.js      esqueleto, cursores, anillos, guías, efectos, estado y panel debug
 tests/                 pruebas con manos sintéticas (npm test)
 ```
 
-Próximas fases: barra de apps y las mini-apps de `apps/` (reloj, notas, calculadora); luego
-retroceder, inicio y apps recientes.
+Próximas fases: retroceder, ir al inicio, apps recientes y cambio de app por inclinación;
+después pulido visual, sonidos y rendimiento.
 
 ## Pruebas
 
