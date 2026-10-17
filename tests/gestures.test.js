@@ -19,7 +19,16 @@ function runFrames(engine, seconds, handFn, t0 = 0) {
 }
 
 test('clasifica las poses básicas', () => {
-  const expected = { palm: 'palma', fist: 'puno', thumbsUp: 'pulgar', L: 'L', point: 'senalar', pinch: 'pellizco', pinky: 'menique' };
+  const expected = {
+    palm: 'palma',
+    fist: 'puno',
+    thumbsUp: 'pulgar',
+    L: 'L',
+    point: 'senalar',
+    pinch: 'pellizco',
+    grabPinch: 'pellizco',
+    pinky: 'menique',
+  };
   for (const [pose, label] of Object.entries(expected)) {
     const f = analyzeHand(makeHand(POSES[pose]), 4 / 3);
     assert.equal(f.pose, label, `${pose}: ${JSON.stringify(f.fingers)}`);
@@ -145,6 +154,41 @@ test('un solo frame con los dedos juntos no es un pellizco', () => {
   const { engine, t } = activeEngine();
   const run = runFrames(engine, 1, (time, i) => [makeHand({ ...POSES.point, pinch: i === 10 ? 1 : 0 })], t);
   assert.deepEqual(pinchesOf(run), []);
+});
+
+test('pellizco con los demás dedos doblados (para agarrar) sí cuenta', () => {
+  const { engine, t } = activeEngine();
+  const run = runFrames(engine, 0.4, () => [makeHand(POSES.grabPinch)], t);
+  assert.deepEqual(pinchesOf(run), ['pinchstart']);
+});
+
+test('un frame ruidoso con los dedos abiertos no suelta el pellizco', () => {
+  const { engine, t } = activeEngine();
+  const run = runFrames(engine, 1.2, (time, i) => [makeHand({ ...POSES.pinch, pinch: i === 15 ? 0 : 1 })], t);
+  assert.deepEqual(pinchesOf(run), ['pinchstart']);
+});
+
+test('si el detector pierde la mano 250 ms mientras arrastra, no suelta', () => {
+  const { engine, t } = activeEngine();
+  const run = runFrames(engine, 1.2, (time, i) => (i >= 12 && i < 19 ? [] : [makeHand(POSES.pinch)]), t);
+  assert.deepEqual(pinchesOf(run), ['pinchstart']);
+  const lost = runFrames(engine, 0.6, () => [], run.end);
+  assert.deepEqual(lost.events.map((e) => [e.type, e.lost]), [['pinchend', true]], 'perderla del todo sí suelta');
+});
+
+test('cerrar el puño suelta el pellizco', () => {
+  const { engine, t } = activeEngine();
+  const grab = runFrames(engine, 0.4, () => [makeHand(POSES.grabPinch)], t);
+  const fist = runFrames(engine, 0.4, () => [makeHand(POSES.fist)], grab.end);
+  assert.deepEqual([...pinchesOf(grab), ...pinchesOf(fist)], ['pinchstart', 'pinchend']);
+});
+
+test('el cursor se va llenando al juntar los dedos', () => {
+  const { engine, t } = activeEngine();
+  const open = runFrames(engine, 0.3, () => [makeHand({ ...POSES.point, pinch: 0 })], t).states.at(-1).pointers[0];
+  const near = runFrames(engine, 0.3, () => [makeHand({ ...POSES.point, pinch: 0.75 })], t + 300).states.at(-1).pointers[0];
+  assert.equal(open.pinchLevel, 0);
+  assert.ok(near.pinchLevel > 0 && near.pinchLevel < 1, `nivel ${near.pinchLevel}`);
 });
 
 test('el puño no cuenta como pellizco', () => {

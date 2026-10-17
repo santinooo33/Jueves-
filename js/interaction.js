@@ -20,6 +20,8 @@ export class Interaction {
     this.lastSeen = new Map();
     this.hovered = new Map(); // id de mano -> botón iluminado
     this.armed = new Map(); // ventana -> 'resize-armed' | 'closing-armed' (a punto de pasar)
+    this.pinchEndedAt = new Map(); // id de mano -> cuándo soltó su último pellizco
+    this.now = 0;
   }
 
   get mode() {
@@ -47,6 +49,7 @@ export class Interaction {
       if (this.engaged.size || this.hovered.size || this.armed.size) this.reset();
       return out;
     }
+    this.now = now;
     const pointers = new Map(state.pointers.map((p) => [p.handId, p]));
     for (const p of state.pointers) this.lastSeen.set(p.handId, now);
 
@@ -71,6 +74,15 @@ export class Interaction {
     }
     this.#arm(armed);
     this.#hover(state.pointers);
+
+    // Olvida los bloqueos de manos que ya no se ven.
+    for (const id of this.locks.keys()) {
+      if (!pointers.has(id) && now - (this.lastSeen.get(id) ?? 0) > this.cfg.HAND_LOST_MS) {
+        this.locks.delete(id);
+        this.lastSeen.delete(id);
+        this.pinchEndedAt.delete(id);
+      }
+    }
 
     out.mode = this.mode;
     return out;
@@ -112,6 +124,9 @@ export class Interaction {
   }
 
   #pinchEnd(e, pointers) {
+    // Al soltar, la mano suele quedar en puño o en L: esas poses no deben cerrar ni redimensionar
+    // (solo cuentan las que se formen después de soltar).
+    this.pinchEndedAt.set(e.handId, this.now);
     const eng = this.engaged.get(e.handId);
     if (!eng || eng.type === 'resize') return;
     this.engaged.delete(e.handId);
@@ -121,6 +136,8 @@ export class Interaction {
       const moved = dist({ x: e.x, y: e.y }, eng.start);
       if (eng.target && !e.lost && !eng.cancelled && moved <= this.cfg.CLICK_MAX_MOVE_PX) eng.target.click();
     } else if (eng.type === 'drag') {
+      // Al abrir los dedos el punto medio se corre: la ventana queda donde estaba justo antes.
+      eng.win.moveTo(eng.startRect.x + e.x - eng.start.x, eng.startRect.y + e.y - eng.start.y);
       eng.win.setState('dragging', false);
     } else if (eng.type === 'zoom') {
       eng.win.setState('zooming', false);
@@ -198,6 +215,8 @@ export class Interaction {
   #holds(p, out, armed) {
     const cfg = this.cfg;
     const locks = this.locks.get(p.handId);
+    // Una pose que empezó antes de soltar el último pellizco no cuenta.
+    if (this.now - p.poseMs <= (this.pinchEndedAt.get(p.handId) ?? -Infinity)) return;
     const over = () => this.desktop.windowAt(p.x, p.y) ?? this.desktop.windowAt(p.palm.x, p.palm.y);
 
     if (p.pose === 'L' && !locks?.has('L')) {

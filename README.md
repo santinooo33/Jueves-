@@ -63,8 +63,11 @@ Abre en el celular la URL `https://….trycloudflare.com` que imprime.
 3. Muestra la **palma abierta y quieta**: aparece un anillo que se llena en 2 s → **Activo**.
 4. Mueve el **índice**: el cursor está sobre la punta del dedo.
 5. Gestos sobre las ventanas:
-   - **Mover:** pellizca (pulgar + índice) la barra de título o el borde y arrastra. El borde
-     se ilumina al acercar el dedo y la ventana sigue el punto medio entre pulgar e índice.
+   - **Pellizco:** junta las puntas del pulgar y el índice (con los otros dedos abiertos o
+     doblados, como prefieras). El centro del cursor se va llenando a medida que juntas los
+     dedos; lleno = pellizco. Para soltar, abre los dedos o cierra el puño.
+   - **Mover:** pellizca la barra de título o el borde y arrastra. El borde se ilumina al
+     acercar el dedo y la ventana sigue el punto medio entre pulgar e índice.
    - **Pulsar un botón:** pellizca encima y suelta (el clic ocurre al soltar).
    - **Cambiar tamaño:** forma una **L** (pulgar e índice abiertos) sobre la ventana y déjala
      quieta ½ s. La ventana brilla en ámbar: abre los dedos para agrandar, júntalos para achicar.
@@ -81,7 +84,8 @@ Abre en el celular la URL `https://….trycloudflare.com` que imprime.
 Botón **DEBUG** (o tecla **D**, o abrir con `?debug` en la URL). Muestra:
 - FPS de la cámara, tiempo de inferencia, GPU/CPU y resolución.
 - Por mano: flexión de cada dedo en grados (verde = extendido, ámbar = intermedio, rojo =
-  doblado), separación del pulgar, pellizco (razón y cm), movimiento y tiempo sostenido.
+  doblado), separación del pulgar, pellizco (razón suavizada y cm), alcance del índice (qué tan
+  lejos de la palma está su punta), movimiento y tiempo sostenido.
 - La pose detectada y qué hace cada cursor (pinza, moviendo, tamaño, zoom…).
 
 Si la GPU da problemas, `?cpu` fuerza el modo CPU.

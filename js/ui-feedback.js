@@ -258,9 +258,9 @@ export class UIFeedback {
     while (this.cursors.length < pointers.length) {
       const el = document.createElement('div');
       el.className = 'cursor';
-      el.innerHTML = '<div class="ring"></div><div class="dot"></div>';
+      el.innerHTML = '<div class="fill"></div><div class="ring"></div><div class="dot"></div>';
       this.cursorsEl.appendChild(el);
-      this.cursors.push({ el, cls: '' });
+      this.cursors.push({ el, cls: '', level: -1 });
     }
     this.cursors.forEach((c, i) => {
       const p = pointers[i];
@@ -269,7 +269,14 @@ export class UIFeedback {
         c.el.className = cls;
         c.cls = cls;
       }
-      if (p) c.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+      if (!p) return;
+      c.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+      // El relleno crece a medida que juntas pulgar e índice.
+      const level = Math.round(p.pinchLevel * 10) / 10;
+      if (level !== c.level) {
+        c.el.style.setProperty('--pinch', String(level));
+        c.level = level;
+      }
     });
   }
 
@@ -341,7 +348,7 @@ export class UIFeedback {
           const side = (HAND_NAMES[hand.handedness] ?? hand.handedness).slice(0, 3);
           return (
             `<tr><th>#${hand.id} ${side}</th>${fingers}</tr>` +
-            `<tr class="sub"><td colspan="6"><b>${POSE_LABELS[hand.track?.pose ?? f.pose]}</b> · pellizco ${f.pinchRatio.toFixed(2)} · ${f.pinchCm.toFixed(1)}cm` +
+            `<tr class="sub"><td colspan="6"><b>${POSE_LABELS[hand.track?.pose ?? f.pose]}</b> · pellizco ${(hand.track?.pinchSmooth ?? f.pinchRatio).toFixed(2)} · ${f.pinchCm.toFixed(1)}cm · alcance ${f.indexReach.toFixed(2)}` +
             ` · mov ${act.drift.toFixed(2)} · ${(act.elapsed / 1000).toFixed(1)}s${act.locked ? ' · suelta' : ''}${doing}</td></tr>`
           );
         })
@@ -350,7 +357,7 @@ export class UIFeedback {
     }
     rows.push(
       `<div class="dbg-cfg">dedo ext ≤${cfg.FINGER_EXTENDED_MAX_BEND}° dob ≥${cfg.FINGER_CURLED_MIN_BEND}° · pulgar ≤${cfg.THUMB_MAX_BEND}°/sep ≥${cfg.THUMB_EXTENDED_RATIO}` +
-        ` · pellizco &lt;${cfg.PINCH_GRAB_RATIO}/&gt;${cfg.PINCH_RELEASE_RATIO} · quietud ≤${cfg.STILL_TOLERANCE}</div>`,
+        ` · pellizco &lt;${cfg.PINCH_GRAB_RATIO}/&gt;${cfg.PINCH_RELEASE_RATIO} alcance ≥${cfg.PINCH_MIN_INDEX_REACH} · quietud ≤${cfg.STILL_TOLERANCE}</div>`,
     );
     this.debugEl.innerHTML = rows.join('');
   }

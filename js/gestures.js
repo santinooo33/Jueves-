@@ -34,12 +34,18 @@ export const CONFIG = {
   PALM_REQUIRES_THUMB: false, // ¿la "palma abierta" exige además el pulgar abierto?
 
   // Pellizco. razón = dist(punta del pulgar, punta del índice) / largo de la palma
-  PINCH_GRAB_RATIO: 0.22, // < esto: agarra
-  PINCH_RELEASE_RATIO: 0.38, // > esto: suelta (histéresis: hay que abrir claramente más)
-  PINCH_CONFIRM_FRAMES: 2, // frames seguidos por debajo/encima del umbral para agarrar/soltar
+  PINCH_GRAB_RATIO: 0.25, // < esto: agarra
+  PINCH_RELEASE_RATIO: 0.42, // > esto: suelta (histéresis: hay que abrir claramente más)
+  PINCH_SMOOTHING: 0.6, // peso del valor nuevo al suavizar la razón (1 = sin suavizar)
+  PINCH_CONFIRM_FRAMES: 2, // frames seguidos por debajo del umbral para agarrar
+  PINCH_RELEASE_FRAMES: 3, // frames seguidos por encima del umbral para soltar (no suelta por un frame ruidoso)
+  // La punta del índice tiene que estar lejos de la palma (× largo de la palma): en un puño está
+  // metida en la palma; en un pellizco sale a buscar al pulgar aunque los otros dedos estén doblados.
+  PINCH_MIN_INDEX_REACH: 0.55,
+  PINCH_RELEASE_REACH: 0.45, // si la punta del índice vuelve a la palma (cerrar el puño) también suelta
   // Al juntar los dedos la punta del índice baja hacia el pulgar: el punto de agarre es donde
   // estaba el cursor este tiempo antes, así el clic cae donde apuntabas.
-  PINCH_LOOKBACK_MS: 120,
+  PINCH_LOOKBACK_MS: 200,
 
   // Cursor (uno por mano), en la punta del índice. Suavizado One Euro en píxeles:
   // minCutoff menor = menos temblor; beta mayor = menos retraso al moverse rápido.
@@ -51,11 +57,11 @@ export const CONFIG = {
   EDGE_GRAB_INSIDE_PX: 16, // ancho del borde agarrable hacia dentro de la ventana
   EDGE_GRAB_OUTSIDE_PX: 22, // y hacia fuera (el dedo no tiene que caer justo en la línea)
   EDGE_GLOW_PX: 70, // a esta distancia del borde empieza a iluminarse
-  CLICK_MAX_MOVE_PX: 30, // si el pellizco se mueve más que esto, ya no cuenta como clic
+  CLICK_MAX_MOVE_PX: 45, // si el pellizco se mueve más que esto, ya no cuenta como clic
   RESIZE_HOLD_MS: 500, // "L" quieta sobre una ventana durante este tiempo → modo tamaño
   RESIZE_SENSITIVITY: 1.5, // tamaño = tamaño inicial × (apertura / apertura inicial) ^ esto
   RESIZE_EXIT_DROP: 1.2, // bajar la palma esto (× tamaño de la palma) sale del modo tamaño
-  HAND_LOST_MS: 300, // sin ver la mano este tiempo se cancela lo que estaba haciendo
+  HAND_LOST_MS: 300, // sin ver la mano este tiempo se suelta el pellizco o se cancela lo que hacía
   FIST_CLOSE_HOLD_MS: 600, // puño sostenido sobre una ventana durante este tiempo → la cierra
 };
 
@@ -161,6 +167,7 @@ export function analyzeHand(hand, aspect, cfg = CONFIG) {
   fingers.thumb = { bend: thumbBend, ratio: thumbRatio, state: thumbExtended ? 'extended' : 'curled' };
 
   const pinchDist = dist3(w[LM.THUMB_TIP], w[LM.INDEX_TIP]);
+  const indexReach = dist3(w[LM.INDEX_TIP], palm) / palmLen;
 
   // Medidas 2D en el encuadre (para "quieto"/movimiento): x corregida por aspecto.
   const lm = hand.landmarks;
@@ -175,6 +182,7 @@ export function analyzeHand(hand, aspect, cfg = CONFIG) {
     thumbExtended,
     pinchRatio: pinchDist / palmLen,
     pinchCm: pinchDist * 100,
+    indexReach,
     palmLenCm: palmLen * 100,
     palmNorm,
     palm2D,
@@ -190,12 +198,13 @@ function classifyPose(f, cfg) {
   const cur = (finger) => finger.state === 'curled';
   const four = [index, middle, ring, pinky];
   const rest = [middle, ring, pinky];
-  f.fistLike = four.every(cur);
 
+  // Pulgar tocando la punta del índice estirado hacia fuera = pellizco, aunque el índice y los
+  // demás dedos estén doblados (así se pellizca "para agarrar"). Va antes que el puño.
+  if (f.pinchRatio < cfg.PINCH_GRAB_RATIO && f.indexReach >= cfg.PINCH_MIN_INDEX_REACH) return 'pellizco';
   if (four.every(cur)) return f.thumbExtended ? 'pulgar' : 'puno';
   // El anular suele acompañar un poco al meñique: basta con que no esté extendido.
   if (ext(pinky) && ![index, middle, ring].some(ext)) return 'menique';
-  if (f.pinchRatio < cfg.PINCH_GRAB_RATIO) return 'pellizco';
   if (four.every(ext) && (f.thumbExtended || !cfg.PALM_REQUIRES_THUMB)) return 'palma';
   if (ext(index) && !rest.some(ext)) return f.thumbExtended ? 'L' : 'senalar';
   return 'otro';
@@ -359,6 +368,11 @@ export class GestureEngine {
         palmY += s[i].y / PALM_POINTS.length;
       }
 
+      if (t.pinching) {
+        t.path.push({ t: now, x, y });
+        while (t.path.length > 2 && now - t.path[0].t > cfg.PINCH_LOOKBACK_MS * 3) t.path.shift();
+      }
+
       hand.track = t;
       if (!this.active) continue;
       pointers.push({
@@ -366,6 +380,8 @@ export class GestureEngine {
         x: clamp(x, 0, viewport.width),
         y: clamp(y, 0, viewport.height),
         pinching: t.pinching,
+        // 0..1: cuánto falta para cerrar el pellizco (para que el cursor se vaya llenando)
+        pinchLevel: t.pinching ? 1 : pinchLevel(t.pinchSmooth, f, cfg),
         pose: t.pose,
         poseMs: now - t.poseSince,
         holdMs: now - Math.max(t.poseSince, t.stillSince), // pose actual + mano quieta
@@ -378,9 +394,10 @@ export class GestureEngine {
       });
     }
 
-    // Manos que dejaron de verse: un pellizco en curso se suelta (sin clic).
+    // Manos que dejaron de verse: un pellizco en curso se suelta (sin clic). Mientras se pellizca
+    // se espera un poco más, porque al mover rápido la mano el detector la pierde un instante.
     for (const [id, t] of this.tracks) {
-      if (now - t.seen <= cfg.POSE_GRACE_MS) continue;
+      if (now - t.seen <= (t.pinching ? cfg.HAND_LOST_MS : cfg.POSE_GRACE_MS)) continue;
       if (t.pinching) events.push({ type: 'pinchend', handId: id, x: t.lastX, y: t.lastY, lost: true });
       this.tracks.delete(id);
     }
@@ -395,8 +412,10 @@ export class GestureEngine {
   // Pellizco con histéresis: agarra con la pinza bien cerrada, suelta solo al abrirla claramente.
   #updatePinch(t, hand, f, now, { tx, ty, mx, my }, events) {
     const cfg = this.cfg;
+    t.pinchSmooth = t.pinchSmooth == null ? f.pinchRatio : t.pinchSmooth + (f.pinchRatio - t.pinchSmooth) * cfg.PINCH_SMOOTHING;
+    const ratio = t.pinchSmooth;
     if (!t.pinching) {
-      const closed = f.pinchRatio < cfg.PINCH_GRAB_RATIO && !f.fistLike;
+      const closed = ratio < cfg.PINCH_GRAB_RATIO && f.indexReach >= cfg.PINCH_MIN_INDEX_REACH;
       t.pinchFrames = closed ? t.pinchFrames + 1 : 0;
       if (t.pinchFrames < cfg.PINCH_CONFIRM_FRAMES) return;
       const past = t.history.find((h) => h.t >= now - cfg.PINCH_LOOKBACK_MS) ?? { x: tx, y: ty };
@@ -404,16 +423,24 @@ export class GestureEngine {
       t.pinchFrames = 0;
       t.grab = { x: past.x, y: past.y };
       t.midStart = { x: mx, y: my };
+      t.path = [];
       events.push({ type: 'pinchstart', handId: hand.id, x: past.x, y: past.y });
     } else {
-      const open = f.pinchRatio > cfg.PINCH_RELEASE_RATIO;
-      t.pinchFrames = open ? t.pinchFrames + 1 : 0;
-      if (t.pinchFrames < cfg.PINCH_CONFIRM_FRAMES) return;
+      const opened = ratio > cfg.PINCH_RELEASE_RATIO || f.indexReach < cfg.PINCH_RELEASE_REACH;
+      t.pinchFrames = opened ? t.pinchFrames + 1 : 0;
+      if (t.pinchFrames < cfg.PINCH_RELEASE_FRAMES) return;
+      // Se suelta donde estaba el cursor antes de empezar a abrir los dedos.
+      const past = t.path.find((h) => h.t >= now - cfg.PINCH_LOOKBACK_MS) ?? t.path.at(-1) ?? t.grab;
       t.pinching = false;
       t.pinchFrames = 0;
-      events.push({ type: 'pinchend', handId: hand.id, x: t.grab.x + (mx - t.midStart.x), y: t.grab.y + (my - t.midStart.y) });
+      events.push({ type: 'pinchend', handId: hand.id, x: past.x, y: past.y });
     }
   }
+}
+
+function pinchLevel(ratio, f, cfg) {
+  if (ratio == null || f.indexReach < cfg.PINCH_MIN_INDEX_REACH) return 0;
+  return clamp((cfg.PINCH_RELEASE_RATIO - ratio) / (cfg.PINCH_RELEASE_RATIO - cfg.PINCH_GRAB_RATIO), 0, 1);
 }
 
 function newTrack(cfg, now, f) {
@@ -430,6 +457,8 @@ function newTrack(cfg, now, f) {
     tipFilter: filter(),
     midFilter: filter(),
     history: [],
+    path: [],
+    pinchSmooth: null,
     pinching: false,
     pinchFrames: 0,
     grab: null,

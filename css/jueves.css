@@ -273,6 +273,7 @@ body.is-debug .hint,
 }
 
 .cursor {
+  --pinch: 0;
   position: absolute;
   left: 0;
   top: 0;
@@ -304,6 +305,20 @@ body.is-debug .hint,
   border-radius: 50%;
   border: 1px dashed rgba(var(--cyan-rgb), 0.55);
   animation: spin 7s linear infinite;
+}
+
+/* Se llena a medida que juntas pulgar e índice; lleno = pellizco. */
+.cursor .fill {
+  position: absolute;
+  left: -15px;
+  top: -15px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(var(--cyan-rgb), 0.5);
+  opacity: calc(0.25 + var(--pinch) * 0.75);
+  transform: scale(var(--pinch));
+  transition: transform 0.08s linear;
 }
 
 .cursor .dot {

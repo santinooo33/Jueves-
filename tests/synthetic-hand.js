@@ -73,6 +73,8 @@ export const POSES = {
   point: { curl: { middle: 1, ring: 1, pinky: 1 }, thumb: 'folded' },
   pinch: { curl: { index: 0.35, middle: 0.2, ring: 0.2, pinky: 0.2 }, thumb: 'open', pinch: true },
   pinky: { curl: { index: 1, middle: 1, ring: 0.9 }, thumb: 'folded' },
+  // Pellizco "para agarrar": índice doblado hacia el pulgar y los demás dedos recogidos.
+  grabPinch: { curl: { index: 0.7, middle: 1, ring: 1, pinky: 1 }, thumb: 'open', pinch: true },
 };
 
 /** Frame como el de hand-tracking.js, con los puntos ya proyectados a la pantalla. */
